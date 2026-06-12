@@ -19,7 +19,7 @@ def mirror(
     ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
-    """Mirror ghcr.io/mlflow/mlflow → us-central1-docker.pkg.dev/.../mlflow:tag via Cloud Build."""
+    """Mirror ghcr.io/mlflow/mlflow → europe-west1-docker.pkg.dev/.../mlflow:tag via Cloud Build."""
     mode = ProviderMode.DRY_RUN if dry_run else ProviderMode.REAL
     service = get_mlflow_service(mode)
     pid = project_id or settings().gcp.project

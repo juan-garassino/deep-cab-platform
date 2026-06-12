@@ -91,6 +91,12 @@ variable "runtime_project_roles" {
     "roles/cloudsql.client",
     # train-on-vm: VM self-destructs at end of training run.
     "roles/compute.instanceAdmin.v1",
+    # Continuous-training simulation: scan garassino-ml.taxi.yellow_trips_raw
+    # from BigQuery + run queries via the BQ job runner. dataEditor is needed
+    # by `data clone-bq` for the final `bq load` step into the EU table.
+    "roles/bigquery.dataViewer",
+    "roles/bigquery.dataEditor",
+    "roles/bigquery.jobUser",
   ]
 }
 

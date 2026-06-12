@@ -4,7 +4,7 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Bucket location (single region — e.g. us-central1)."
+  description = "Bucket location (single region — e.g. europe-west1)."
   type        = string
 }
 

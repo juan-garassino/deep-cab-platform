@@ -2,10 +2,16 @@
 #
 # Env-scoped wrappers around Terraform. Default env is `dev`.
 #
-#   make ENV=staging plan
-#   make ENV=prod apply
-#   make fmt
-#   make validate
+# GCP migration note (2026-06-06): retargeted to garassino-ml (europe-west1).
+# State backend is now gs://garassino-op-tf-state/deepcab/. Operates in
+# show-and-destroy mode under the €25/mo workspace cap — see `showcase_up`
+# (~€15/mo while running) + `showcase_down` (~€1/mo idle). The staging/prod
+# envs are deprecated; only `dev` is funded under the cap.
+#
+#   make ENV=dev apply        # provision
+#   make ENV=dev showcase_up  # bring it live for a demo
+#   make ENV=dev showcase_down # quiesce
+#   make ENV=dev destroy      # wipe everything
 
 ENV ?= dev
 TF_DIR := terraform/envs/$(ENV)

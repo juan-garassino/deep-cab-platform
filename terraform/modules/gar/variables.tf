@@ -4,7 +4,7 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Region the Artifact Registry repo lives in (e.g. us-central1)."
+  description = "Region the Artifact Registry repo lives in (e.g. europe-west1)."
   type        = string
 }
 

@@ -14,11 +14,15 @@ showcase_app = typer.Typer(help="Showcase stack up/down toggle.", no_args_is_hel
 @showcase_app.command("up")
 def up(
     env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e"),
+    ignore_legacy: bool = typer.Option(
+        False, "--ignore-legacy",
+        help="Skip the pre-flight check for legacy Cloud SQL state. Use only if you've vetted the apply plan.",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Bring the stack live: Cloud SQL ALWAYS, Uptime Kuma min=1 (~$15/mo)."""
     mode = ProviderMode.DRY_RUN if dry_run else ProviderMode.REAL
-    out = get_showcase_service(mode).set_mode(env, ShowcaseMode.UP)
+    out = get_showcase_service(mode).set_mode(env, ShowcaseMode.UP, ignore_legacy=ignore_legacy)
     rprint("[bold green]✓ showcase up[/bold green]")
     rprint(out)
 

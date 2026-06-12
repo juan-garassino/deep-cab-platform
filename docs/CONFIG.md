@@ -1,5 +1,7 @@
 # CONFIG — environment model
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; canonical config is now `garassino-ml` / `europe-west1` (root `CLAUDE.md` § "GCP architecture"). Project IDs and regions below describe pre-migration state — body kept as historical narrative.
+
 deepCab uses one environment variable, `DEEPCAB_ENV`, to switch every layer
 between local development and the three GCP environments. This doc is the
 canonical reference for that model.

@@ -38,7 +38,7 @@ class SecretsService:
         value: str,
         *,
         project_id: str,
-        region: str = "us-central1",
+        region: str = "europe-west1",
         services: list[str] | None = None,
     ) -> dict:
         new_version = self._add_version(secret_id, value, project_id)

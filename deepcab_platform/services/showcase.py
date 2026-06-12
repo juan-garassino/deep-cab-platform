@@ -17,16 +17,32 @@ from rich import print as rprint
 
 from deepcab_platform.providers.gcloud import GcloudProvider
 from deepcab_platform.schemas.enums import PlatformEnv, ShowcaseMode, TerraformAction
+from deepcab_platform.services.cleanup import CleanupLegacyService
 from deepcab_platform.services.terraform import TerraformService
+
+
+class LegacyStateDetected(RuntimeError):
+    """Raised when showcase pre-flight finds Cloud SQL / mlflow_db_password
+    references still in tfstate. Caller can catch + suppress via --ignore-legacy."""
 
 
 @dataclass
 class ShowcaseService:
     terraform_service: TerraformService
     gcloud: GcloudProvider | None = None
+    cleanup_service: CleanupLegacyService | None = None
     cloud_sql_ready_timeout_seconds: int = 300
 
-    def set_mode(self, env: PlatformEnv, mode: ShowcaseMode) -> str:
+    def set_mode(
+        self,
+        env: PlatformEnv,
+        mode: ShowcaseMode,
+        *,
+        ignore_legacy: bool = False,
+    ) -> str:
+        if mode == ShowcaseMode.UP:
+            self._check_legacy_state(env, ignore_legacy=ignore_legacy)
+
         showcase_var = "true" if mode == ShowcaseMode.UP else "false"
         out = self.terraform_service.run_action(
             TerraformAction.APPLY,
@@ -38,6 +54,34 @@ class ShowcaseService:
             self._wait_for_cloud_sql(env)
             self._warm_kuma(env)
         return out
+
+    # ------------------------- pre-flight ------------------------------------
+
+    def _check_legacy_state(self, env: PlatformEnv, *, ignore_legacy: bool) -> None:
+        """Abort apply if tfstate still holds the dropped cloud_sql / mlflow_db_password
+        resources — they cause a destroy race against the MLflow revision swap.
+        Falls back to a non-fatal warning when the state lookup itself fails."""
+        if self.cleanup_service is None:
+            return
+        try:
+            addresses = self.cleanup_service.list_legacy_state_addresses(env)
+        except Exception as exc:
+            rprint(f"[yellow]Could not check tfstate for legacy resources ({exc}); proceeding.[/yellow]")
+            return
+        if not addresses:
+            return
+        msg = (
+            f"Legacy resources still in tfstate for env={env.value}:\n  - "
+            + "\n  - ".join(addresses)
+            + "\n\nRun `deepcab-platform tf cleanup-legacy --env "
+            + env.value
+            + "` first."
+        )
+        if ignore_legacy:
+            rprint(f"[yellow]{msg}\n(--ignore-legacy set; proceeding anyway)[/yellow]")
+            return
+        rprint(f"[red]{msg}[/red]")
+        raise LegacyStateDetected(msg)
 
     # ------------------------- readiness helpers -----------------------------
 

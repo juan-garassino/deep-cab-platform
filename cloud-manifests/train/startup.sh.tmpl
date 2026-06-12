@@ -51,7 +51,7 @@ trap 'notify "❌ *deepCab train* on VM \`$INSTANCE_NAME\` FAILED · run=\`$RUN_
 notify "🚀 *deepCab train* starting · run=\`$RUN_ID\` · backend=\`$BACKEND\` · data=\`$DATA\` · vm=\`$INSTANCE_NAME\` · gpu=\`$GPU\`"
 
 # Authenticate Docker to GAR (uses the VM's attached service account)
-gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
 
 # Pull the image — Cloud Run side has it cached too; first VM cold-pull is
 # usually 60-120s on a fresh n1-standard-4.
@@ -71,6 +71,13 @@ docker_args=(
   -e REGISTRY_GCS_BUCKET="$MODELS_BUCKET"
   -e GCP_PROJECT="$PROJECT_ID"
 )
+# Caller-supplied env overrides land last so they win on conflict (e.g.
+# the simulate flow sets MLFLOW_RUN_NAME + MLFLOW_EXPERIMENT to its
+# deterministic per-chunk names). Empty when no --extra-env was passed.
+extra_env_flags=(${EXTRA_DOCKER_ENV})
+if [ ${#extra_env_flags[@]} -gt 0 ]; then
+  docker_args+=("${extra_env_flags[@]}")
+fi
 if [ "$GPU" != "none" ]; then
   docker_args+=(--gpus all)
 fi

@@ -13,6 +13,7 @@ execute deepcab-retrain` is strictly the better path.
 from __future__ import annotations
 
 import os
+import shlex
 import string
 import tempfile
 from dataclasses import dataclass
@@ -53,7 +54,7 @@ class TrainOnVmService:
     ) -> TrainOnVmResult:
         instance_name = self._instance_name(inputs)
         image_uri = (
-            f"us-central1-docker.pkg.dev/{project_id}/deepcab/api:{inputs.image_tag}"
+            f"europe-west1-docker.pkg.dev/{project_id}/deepcab/api:{inputs.image_tag}"
         )
         startup_script = self._render_startup(
             inputs=inputs,
@@ -135,7 +136,20 @@ class TrainOnVmService:
             TG_CHAT=telegram_chat_id,
             AUTO_DELETE="true" if inputs.auto_delete else "false",
             GPU=inputs.gpu.value,
+            EXTRA_DOCKER_ENV=self._render_extra_docker_env(inputs.extra_env),
         )
+
+    @staticmethod
+    def _render_extra_docker_env(extra: dict[str, str]) -> str:
+        """Render extra env dict as space-separated `-e KEY='value'` flags.
+
+        Keys are guaranteed shell-safe by the Pydantic validator; values get
+        shlex.quote()'d so datetime literals + spaces survive the bash array
+        expansion intact. Empty dict → empty string (placeholder collapses).
+        """
+        if not extra:
+            return ""
+        return " ".join(f"-e {k}={shlex.quote(v)}" for k, v in sorted(extra.items()))
 
     @staticmethod
     def _gcloud_create_args(

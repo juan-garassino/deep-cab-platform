@@ -24,11 +24,16 @@ module "gar" {
 }
 
 # 2. Storage buckets (mlflow artifacts, models, tfstate)
+# name_prefix override: the old `deepcab-*-dev` bucket names from the deleted
+# deepcab-dev project are still in GCS-global-namespace cooldown. Use
+# project-id-scoped names to guarantee uniqueness. Pattern matches the
+# garassino-ml convention from root CLAUDE.md.
 module "storage" {
-  source     = "../../modules/storage"
-  project_id = var.project_id
-  region     = var.region
-  env        = local.env
+  source      = "../../modules/storage"
+  project_id  = var.project_id
+  region      = var.region
+  env         = local.env
+  name_prefix = "garassino-deepcab"
 
   # dev: allow destroy with objects present so iteration is painless
   force_destroy = true
@@ -69,27 +74,16 @@ module "vpc" {
   enabled    = false
 }
 
-# 6. Cloud SQL — smallest tier, public IP (dev only)
-module "cloud_sql" {
-  source     = "../../modules/cloud_sql"
-  project_id = var.project_id
-  region     = var.region
-  env        = local.env
-
-  tier                = "db-f1-micro"
-  activation_policy   = var.showcase_mode ? "ALWAYS" : "NEVER"
-  deletion_protection = false
-  use_private_ip      = false
-
-  authorized_networks = [
-    {
-      name  = "world-readonly-temp"
-      value = "0.0.0.0/0"
-    },
-  ]
-
-  labels = local.common_labels
-}
+# 6. MLflow tracking backend is now Neon (free tier) instead of Cloud SQL.
+# DSN is in Secret Manager as `neon-deepcab-dsn` (populated manually after
+# one-time Neon project provisioning — see docs/RUNBOOK.md §1.7 + §F).
+# Persists across `make destroy` cycles, which Cloud SQL did not.
+#
+# The cloud_sql module + random_password.mlflow_db + mlflow_db_password
+# secret version were removed 2026-06-07. Existing dev state needs:
+#   terraform state rm module.cloud_sql
+#   terraform state rm random_password.kuma_admin_legacy  # if present
+# then `terraform apply` to converge.
 
 # 7. Cloud Run service — deepcab-api (minimal scale)
 module "cloud_run_api" {
@@ -120,10 +114,9 @@ module "cloud_run_api" {
   }
 
   secret_env_vars = {
-    OPENAI_API_KEY     = "openai-api-key"
-    DEEPCAB_API_KEY    = "deepcab-api-key"
-    SLACK_WEBHOOK_URL  = "slack-webhook-url"
-    MLFLOW_DB_PASSWORD = "mlflow-db-password"
+    OPENAI_API_KEY    = "openai-api-key"
+    DEEPCAB_API_KEY   = "deepcab-api-key"
+    SLACK_WEBHOOK_URL = "slack-webhook-url"
   }
 
   labels = local.common_labels
@@ -144,18 +137,14 @@ moved {
   to   = module.cloud_run_api.google_cloud_run_v2_service_iam_member.public
 }
 
-# Auto-populate the mlflow-db-password secret with the TF-generated password.
-# Other secrets (openai-api-key, deepcab-api-key, slack-webhook-url) are
-# user-supplied — push values manually after apply via `gcloud secrets versions add`.
-resource "google_secret_manager_secret_version" "mlflow_db_password" {
-  secret      = "projects/${var.project_id}/secrets/mlflow-db-password"
-  secret_data = module.cloud_sql.user_passwords["mlflow"]
-
-  depends_on = [
-    module.secrets,
-    module.cloud_sql,
-  ]
-}
+# MLflow's tracking backend secret (`neon-deepcab-dsn`) is user-supplied;
+# push the value once after Neon is provisioned:
+#
+#   echo -n 'postgresql+psycopg2://...neon.tech/.../deepcab-mlflow?sslmode=require' \
+#     | gcloud secrets versions add neon-deepcab-dsn --data-file=-
+#
+# The runtime SA already has secretAccessor via the secret_manager module —
+# nothing else to do here.
 
 # Uptime Kuma admin password — auto-generated, stored in Secret Manager.
 # Read by `deepcab-platform kuma seed` to create the admin account on first
@@ -173,8 +162,12 @@ resource "google_secret_manager_secret_version" "kuma_admin_password" {
 }
 
 # 7a. Cloud Run service — MLflow tracking server.
-# Uses the GAR-mirrored MLflow image (ghcr.io is rejected by Cloud Run).
-# To refresh after a new MLflow release:
+# Backend is Neon free tier (postgres) instead of Cloud SQL — persists across
+# `make destroy` cycles and costs €0/mo. DSN is `neon-deepcab-dsn` in Secret
+# Manager (populated manually after one-time Neon project creation; see
+# docs/RUNBOOK.md §1.7).
+#
+# Image: GAR-mirrored MLflow (ghcr.io is rejected by Cloud Run). To refresh:
 #   gcloud builds submit --config=cloud-manifests/mlflow/mirror.yaml --no-source
 #
 # Quirk: ghcr.io/mlflow/mlflow ships without psycopg2. Install it on boot, then
@@ -189,7 +182,7 @@ module "cloud_run_mlflow" {
 
   service_name          = "deepcab-mlflow"
   component             = "cloud-run-mlflow"
-  image                 = "us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2"
+  image                 = "europe-west1-docker.pkg.dev/garassino-ml/deepcab/mlflow:v2.16.2"
   service_account_email = module.wif.runtime_sa_email
 
   cpu                   = "1"
@@ -201,7 +194,7 @@ module "cloud_run_mlflow" {
 
   command = ["bash", "-c"]
   args = [
-    "pip install --no-cache-dir psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri 'postgresql+psycopg2://mlflow:'$${DB_PASSWORD}'@/mlflow?host=/cloudsql/${module.cloud_sql.connection_name}' --default-artifact-root 'gs://${module.storage.mlflow_artifacts_bucket}/' --serve-artifacts"
+    "pip install --no-cache-dir psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri \"$${DEEPCAB_NEON_DSN}\" --default-artifact-root 'gs://${module.storage.mlflow_artifacts_bucket}/' --serve-artifacts"
   ]
 
   env_vars = {
@@ -209,20 +202,8 @@ module "cloud_run_mlflow" {
   }
 
   secret_env_vars = {
-    DB_PASSWORD = "mlflow-db-password"
+    DEEPCAB_NEON_DSN = "neon-deepcab-dsn"
   }
-
-  volumes = [
-    {
-      name                = "cloudsql"
-      type                = "cloud_sql"
-      cloud_sql_instances = [module.cloud_sql.connection_name]
-    },
-  ]
-
-  volume_mounts = [
-    { name = "cloudsql", mount_path = "/cloudsql" },
-  ]
 
   startup_probe_path             = "/"
   liveness_probe_path            = "/"
@@ -233,7 +214,7 @@ module "cloud_run_mlflow" {
 
   labels = local.common_labels
 
-  depends_on = [module.cloud_sql, module.secrets, module.storage]
+  depends_on = [module.secrets, module.storage]
 }
 
 # Uptime Kuma needs read+write on its gcsfuse-mounted state bucket
@@ -361,9 +342,9 @@ module "cloud_run_job" {
     REGISTRY_GCS_BUCKET = module.storage.models_bucket
   }
 
-  secret_env_vars = {
-    MLFLOW_DB_PASSWORD = "mlflow-db-password"
-  }
+  # No secrets needed for the retrain Job — MLflow tracking server fronts the
+  # Neon DSN; the Job only talks to the MLflow URL.
+  secret_env_vars = {}
 
   labels = local.common_labels
 
@@ -404,4 +385,14 @@ module "iam" {
   source     = "../../modules/iam"
   project_id = var.project_id
   env        = local.env
+}
+
+# 13. BigQuery — dataset + raw taxi-trip table for the simulation loop.
+# Populated out-of-band by `deepcab-platform data clone-bq`; table has
+# deletion_protection so make destroy keeps the cloned slice.
+module "bigquery" {
+  source     = "../../modules/bigquery"
+  project_id = var.project_id
+  location   = var.region
+  labels     = local.common_labels
 }

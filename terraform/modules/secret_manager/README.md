@@ -17,7 +17,7 @@ Provisions a fixed list of Secret Manager secrets (no initial values — values 
 | `region` | `string` | — | Region for the user-managed replica policy. |
 | `env` | `string` | — | Environment short name. |
 | `runtime_sa_email` | `string` | — | Runtime SA granted `secretAccessor` on every secret. |
-| `secret_ids` | `list(string)` | `["slack-webhook-url", "openai-api-key", "deepcab-api-key", "mlflow-db-password", "kuma-admin-password"]` | Secret IDs to provision. |
+| `secret_ids` | `list(string)` | `["slack-webhook-url", "openai-api-key", "deepcab-api-key", "kuma-admin-password", "neon-deepcab-dsn"]` | Secret IDs to provision. |
 | `labels` | `map(string)` | `{}` | Labels applied to each secret. |
 
 ## Outputs
@@ -35,7 +35,7 @@ echo -n "sk-..."                       | gcloud secrets versions add openai-api-
 openssl rand -hex 32 | tr -d '\n'      | gcloud secrets versions add deepcab-api-key  --data-file=- --project=$PROJECT
 ```
 
-The `mlflow-db-password` and `kuma-admin-password` are auto-populated by adjacent TF resources in the env composition.
+The `kuma-admin-password` is auto-populated by an adjacent TF resource in the env composition. The `neon-deepcab-dsn` is populated manually after one-time Neon project provisioning (see `docs/RUNBOOK.md §1.7`).
 
 ## Example usage
 

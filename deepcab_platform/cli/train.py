@@ -17,13 +17,17 @@ def train_on_vm_cmd(
     backend: BackendKind = typer.Option(BackendKind.TORCH_MLP, "--backend", "-b"),
     data: DataSize = typer.Option(DataSize.S100K, "--data", "-d"),
     machine_type: str = typer.Option("n1-standard-4", "--machine"),
-    zone: str = typer.Option("us-central1-a", "--zone"),
+    zone: str = typer.Option("europe-west1-b", "--zone"),
     gpu: GpuType = typer.Option(GpuType.T4, "--gpu", help="`none` runs CPU on COS"),
     spot: bool = typer.Option(True, "--spot/--standard"),
     auto_delete: bool = typer.Option(True, "--auto-delete/--keep-alive"),
     max_runtime: str = typer.Option("6h", "--max-runtime", help="Belt-and-suspenders GCE timeout"),
     image_tag: str = typer.Option("v1.0", "--image-tag"),
     project_id: str = typer.Option(None, "--project-id", "-p"),
+    extra_env: list[str] = typer.Option(
+        None, "--extra-env", "-E",
+        help="KEY=VAL passed as `-e KEY=value` to the in-VM `docker run`. Repeatable.",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Launch a one-shot training VM. Self-destructs on completion or `--max-runtime` timeout.
@@ -38,11 +42,18 @@ def train_on_vm_cmd(
     if not pid:
         raise typer.BadParameter("--project-id required (or set GCP_PROJECT in env).")
 
+    extra_env_dict: dict[str, str] = {}
+    for pair in extra_env or []:
+        if "=" not in pair:
+            raise typer.BadParameter(f"--extra-env expects KEY=VAL; got {pair!r}")
+        k, v = pair.split("=", 1)
+        extra_env_dict[k] = v
+
     inputs = TrainOnVmInputs(
         env=env, backend=backend, data=data,
         machine_type=machine_type, zone=zone, gpu=gpu,
         spot=spot, auto_delete=auto_delete, max_runtime=max_runtime,
-        image_tag=image_tag,
+        image_tag=image_tag, extra_env=extra_env_dict,
     )
 
     # Pull MLflow URL + models bucket from settings/env (or fall back to standard naming).

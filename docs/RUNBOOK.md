@@ -1,5 +1,7 @@
 # Runbook
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; canonical config is now `garassino-ml` / `europe-west1` (root `CLAUDE.md` § "GCP architecture"). Project IDs and regions below describe pre-migration state — body kept as historical narrative.
+
 Operational playbook for the deepCab platform. Read this end-to-end before
 your first apply.
 
@@ -130,7 +132,7 @@ Cloud Scheduler. ~5-10 minutes.
 ### 1.7 Populate secrets
 
 ```bash
-gcloud config set project deepcab-${ENV}
+gcloud config set project garassino-ml
 
 # Slack
 echo -n "https://hooks.slack.com/..."                 | gcloud secrets versions add slack-webhook-url  --data-file=-
@@ -138,18 +140,30 @@ echo -n "https://hooks.slack.com/..."                 | gcloud secrets versions 
 echo -n "sk-..."                                       | gcloud secrets versions add openai-api-key    --data-file=-
 # Internal API key (X-API-Key for /train and /agent/improve)
 openssl rand -hex 32 | tr -d '\n'                      | gcloud secrets versions add deepcab-api-key   --data-file=-
-# MLflow DB password (rotate from the TF-generated one)
-openssl rand -base64 32 | tr -d '=\n'                  | gcloud secrets versions add mlflow-db-password --data-file=-
+# MLflow tracking backend DSN (one-time, from Neon — see below)
+echo -n "postgresql+psycopg2://...neon.tech/.../deepcab-mlflow?sslmode=require" \
+  | gcloud secrets versions add neon-deepcab-dsn --data-file=-
 ```
 
-After rotating the DB password in Secret Manager, also reset it on the Cloud
-SQL user (TF holds the original value but Secret Manager is the runtime source):
+#### Neon free-tier provisioning (one-time)
 
-```bash
-gcloud sql users set-password mlflow \
-  --instance=deepcab-mlflow-${ENV} \
-  --password=$(gcloud secrets versions access latest --secret=mlflow-db-password)
-```
+MLflow's tracking backend lives on a Neon (`neon.tech`) Postgres instead of
+Cloud SQL — €0/mo idle, survives `make destroy` cycles, no Cloud SQL Proxy
+volume to wire. Pre-requisites for the DSN above:
+
+1. Sign in to `https://neon.tech` (GitHub SSO).
+2. Create a new project `deepcab-mlflow` in the `aws-eu-central-1` region
+   (closest to GCP `europe-west1`).
+3. Create a database `deepcab-mlflow` inside that project (the schema MLflow
+   needs is auto-created on first server boot).
+4. Copy the **pooled** connection string (psycopg2 form). Strip the leading
+   `psql ` if present and prefix the dialect:
+   `postgresql+psycopg2://<user>:<password>@<host>/<db>?sslmode=require`.
+5. Push it as the `neon-deepcab-dsn` secret value (command above).
+
+Neon free tier sleeps after 5 min idle — the first MLflow call after a quiet
+window adds ~3 s. For demos, warm it up before running the simulation loop:
+`curl -fsS "$mlflow_url" >/dev/null`.
 
 ### 1.8 First image lands
 
@@ -221,6 +235,10 @@ make ENV=<env> destroy
 
 The `tfstate` bucket has `force_destroy = false` and survives `terraform destroy`
 on purpose — delete it manually if you really mean it.
+
+> **Migrating an old tfstate from Cloud SQL?** Run [§F](#f-migrating-cloud-sql--neon)
+> first; otherwise `make showcase_up` will plan a destroy of `module.cloud_sql`
+> that races MLflow's revision swap.
 
 ### 3.1 Re-bootstrapping within 30 days (WIF soft-delete window)
 
@@ -408,3 +426,112 @@ module, `make ENV=dev apply` to land the IAM binding before first use.
 
 The `--spot` default can be preempted by GCP — fine for one-shot training,
 not for production-critical workloads. Add `--standard` to opt out.
+
+## 8. Continuous-training simulation
+
+The simulation loop walks a sliding time-window over our EU BigQuery copy
+of `nyc-tlc.yellow.trips`, retrains per chunk, and auto-promotes
+`@challenger` → `@champion` (old champion becomes `@legacy`) whenever the
+new model beats the live one by `--promotion-threshold` on a fixed
+reference slice. Detailed design: `~/.claude/plans/now-please-ultrathik-how-enumerated-star.md`.
+
+### 8.1 One-time setup — clone the BQ table (~10 min, ~€3)
+
+BigQuery refuses CREATE-TABLE-AS-SELECT across regions, so we use the
+export-to-GCS-then-load pattern. Wrapped by:
+
+```bash
+uv run deepcab-platform data clone-bq \
+  --source-table nyc-tlc:yellow.trips \
+  --target-project garassino-ml \
+  --target-dataset taxi \
+  --target-table yellow_trips_raw \
+  --target-location europe-west1 \
+  --year 2014
+```
+
+What it does:
+
+1. `bq query --location=US` against the rendered template at
+   `cloud-manifests/bq/yellow_trips_raw.export.sql` → writes Parquet to a
+   temp US staging bucket.
+2. `gsutil -m cp -r` between staging buckets (US → EU). ~30 GB egress for
+   the full 2014 slice.
+3. `bq load --location=europe-west1` from the EU staging bucket into the
+   TF-managed `garassino-ml.taxi.yellow_trips_raw` table.
+4. Deletes both staging buckets.
+
+The table itself has `deletion_protection = true` (see
+`terraform/modules/bigquery/main.tf`) so `make destroy` doesn't wipe the
+loaded data. Re-running `data clone-bq` is idempotent — it skips steps
+whose outputs already exist.
+
+### 8.2 Smoke (dry-run the loop without firing VMs)
+
+```bash
+uv run deepcab-platform simulate run \
+  --env dev --backend torch_mlp \
+  --time-window-start 2014-01-01 --time-window-end 2014-01-31 \
+  --chunk-period 7d --reference-data 10k --dry-run
+```
+
+Expect 4 dry-run `gcloud compute instances create` lines (4 weeks in Jan)
++ 4 polled MLflow run lookups + 4 promote decisions. Nothing fires.
+
+### 8.3 Real run (cost-bounded, ~€0.20)
+
+```bash
+make showcase_up                           # ~3 min — brings up MLflow on Neon
+uv run deepcab-platform simulate run \
+  --env dev --backend torch_mlp \
+  --time-window-start 2014-01-01 --time-window-end 2014-01-28 \
+  --chunk-period 7d --reference-data 10k --promotion-threshold 0.05
+# 4 T4-spot VMs sequentially (~5 min each) — Telegram per chunk + per promotion
+make showcase_down                         # back to ~€0/mo idle
+```
+
+### 8.4 What gets promoted, when
+
+`PromotionService.maybe_promote()` flips aliases iff
+`challenger_metric < champion_metric * (1 - promotion_threshold)` on the
+held-out reference slice. Default threshold is 5%. The old champion gets
+`@legacy` for one-flag rollback (`mlflow alias set @champion legacy_version`).
+
+### 8.5 Required IAM (TF-managed)
+
+The runtime SA needs `roles/bigquery.dataViewer`, `roles/bigquery.dataEditor`,
+and `roles/bigquery.jobUser` — all in `terraform/modules/wif/variables.tf`'s
+`runtime_project_roles` default. After bumping the module, `make ENV=dev apply`
+to land the bindings before first run.
+
+## F. Migrating Cloud SQL → Neon
+
+The 2026-06-07 architecture move dropped `module.cloud_sql` and the
+`mlflow-db-password` secret in favour of Neon free tier (see §1.7). An
+env whose tfstate predates that change still references both — running
+`terraform apply` plans destroys for them, and Cloud SQL takes ~5 min to
+drop, racing the MLflow Cloud Run revision swap.
+
+One-shot fix, idempotent:
+
+```bash
+uv run deepcab-platform tf cleanup-legacy --env dev
+```
+
+What it does:
+
+1. `terraform state rm` every legacy address (allow-listed: only matches
+   `module.cloud_sql*` and `*mlflow_db_password*`).
+2. `gcloud sql instances delete deepcab-mlflow-dev` (orphan after step 1).
+3. `gcloud secrets delete mlflow-db-password` (no longer referenced).
+4. `terraform plan` → confirms nothing legacy remains.
+
+`make showcase_up` runs a pre-flight check for legacy state and aborts
+with a red banner if found. Override with `--ignore-legacy` only after
+you've eyeballed the apply plan.
+
+Dry-run first if unsure:
+
+```bash
+uv run deepcab-platform tf cleanup-legacy --env dev --dry-run
+```

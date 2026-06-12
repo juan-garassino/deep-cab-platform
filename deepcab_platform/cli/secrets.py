@@ -25,7 +25,7 @@ def rotate(
         None, "--project-id", "-p",
         help="GCP project. Defaults to settings.gcp.project.",
     ),
-    region: str = typer.Option("us-central1", "--region", "-r"),
+    region: str = typer.Option("europe-west1", "--region", "-r"),
     service: list[str] = typer.Option(
         None, "--service", "-s",
         help="Cloud Run service(s) to bump. Repeatable. Defaults to known consumers.",

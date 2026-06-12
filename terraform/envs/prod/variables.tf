@@ -10,7 +10,7 @@ variable "project_number" {
 
 variable "region" {
   type    = string
-  default = "us-central1"
+  default = "europe-west1"
 }
 
 variable "gh_owner" {

@@ -18,7 +18,7 @@ Every bucket uses uniform bucket-level access and gets the canonical label block
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
 | `project_id` | `string` | — | GCP project ID. |
-| `region` | `string` | — | Single-region location (e.g. `us-central1`). |
+| `region` | `string` | — | Single-region location (e.g. `europe-west1`). |
 | `env` | `string` | — | Environment short name. |
 | `name_prefix` | `string` | `deepcab` | Prefix for unique bucket names. |
 | `force_destroy` | `bool` | `false` | Allow `terraform destroy` to wipe non-empty buckets. Dev only. |

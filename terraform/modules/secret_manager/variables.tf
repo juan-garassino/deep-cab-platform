@@ -25,8 +25,11 @@ variable "secret_ids" {
     "slack-webhook-url",
     "openai-api-key",
     "deepcab-api-key",
-    "mlflow-db-password",
     "kuma-admin-password",
+    # MLflow tracking backend DSN (Neon free tier, populated manually after
+    # one-time Neon provisioning). Replaces the deprecated mlflow-db-password
+    # that paired with Cloud SQL.
+    "neon-deepcab-dsn",
   ]
 }
 

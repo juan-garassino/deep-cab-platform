@@ -28,10 +28,17 @@ from deepcab_platform.providers.terraform import (
 from deepcab_platform.schemas.enums import ProviderMode
 from deepcab_platform.schemas.settings import PlatformSettings, get_settings
 from deepcab_platform.services.bootstrap import BootstrapService
+from deepcab_platform.services.cleanup import CleanupLegacyService
+from deepcab_platform.services.data import DataCloneBqService
 from deepcab_platform.services.kuma import KumaSeedService
 from deepcab_platform.services.mlflow import MlflowMirrorService
 from deepcab_platform.services.secrets import SecretsService
 from deepcab_platform.services.showcase import ShowcaseService
+from deepcab_platform.services.simulate import (
+    DryRunSimulateRunner,
+    SimulateService,
+    SubprocessSimulateRunner,
+)
 from deepcab_platform.services.sync_gh import SyncGhService
 from deepcab_platform.services.terraform import TerraformService
 from deepcab_platform.services.train import TrainOnVmService
@@ -82,6 +89,7 @@ def get_showcase_service(mode: ProviderMode = ProviderMode.REAL) -> ShowcaseServ
     return ShowcaseService(
         terraform_service=get_terraform_service(mode),
         gcloud=get_gcloud_provider(mode),
+        cleanup_service=get_cleanup_service(mode),
     )
 
 
@@ -95,6 +103,22 @@ def get_secrets_service(mode: ProviderMode = ProviderMode.REAL) -> SecretsServic
 
 def get_train_service(mode: ProviderMode = ProviderMode.REAL) -> TrainOnVmService:
     return TrainOnVmService(gcloud=get_gcloud_provider(mode))
+
+
+def get_data_clone_service(mode: ProviderMode = ProviderMode.REAL) -> DataCloneBqService:
+    return DataCloneBqService(gcloud=get_gcloud_provider(mode))
+
+
+def get_simulate_service(mode: ProviderMode = ProviderMode.REAL) -> SimulateService:
+    runner = DryRunSimulateRunner() if mode == ProviderMode.DRY_RUN else SubprocessSimulateRunner()
+    return SimulateService(runner=runner)
+
+
+def get_cleanup_service(mode: ProviderMode = ProviderMode.REAL) -> CleanupLegacyService:
+    return CleanupLegacyService(
+        terraform=get_terraform_provider(mode),
+        gcloud=get_gcloud_provider(mode),
+    )
 
 
 def settings() -> PlatformSettings:

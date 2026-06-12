@@ -1,5 +1,7 @@
 # deepCab-platform
 
+> **GCP migration note (2026-06-07):** Live GCP project `deepcab-dev` was cold-deleted. This stack now targets **`garassino-ml`** (region **`europe-west1`**) in show-and-destroy mode under the €25/mo workspace cost cap. Terraform state moved to `gs://garassino-op-tf-state/deepcab/`. The `dev` env is the only funded tier; `staging` / `prod` env directories are marked DEPRECATED and kept as reference. Refs to `deepcab-dev` / `us-central1` elsewhere in this README and `docs/` describe **pre-migration state** — canonical config in workspace root `CLAUDE.md` § "GCP architecture".
+
 GCP infrastructure-as-code for the deepCab learning project. Real Terraform, real CI,
 multi-env (dev / staging / prod). Sibling repo to [`deepCab`](https://github.com/juan-garassino/deepCab)
 (the API). The split:

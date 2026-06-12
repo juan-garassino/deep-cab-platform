@@ -20,7 +20,7 @@ docker push ${GAR_REPO_URL}/website:${TAG}
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
 | `project_id` | `string` | — | GCP project ID hosting the repo. |
-| `region` | `string` | — | Region (e.g. `us-central1`). |
+| `region` | `string` | — | Region (e.g. `europe-west1`). |
 | `repo_id` | `string` | `deepcab` | Repository ID; forms the second path segment of the image URL. |
 | `description` | `string` | `deepCab container images (api, retrain job, website)` | Free-form description. |
 | `labels` | `map(string)` | `{}` | Labels for cost-allocation. |
@@ -30,7 +30,7 @@ docker push ${GAR_REPO_URL}/website:${TAG}
 | Name | Description |
 | --- | --- |
 | `repo_id` | Short repository ID. |
-| `repo_url` | Docker image URL prefix, e.g. `us-central1-docker.pkg.dev/PROJECT/deepcab`. |
+| `repo_url` | Docker image URL prefix, e.g. `europe-west1-docker.pkg.dev/PROJECT/deepcab`. |
 | `repo_name` | Fully-qualified GAR resource name. |
 
 ## Example usage

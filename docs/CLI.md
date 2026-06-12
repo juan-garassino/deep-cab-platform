@@ -1,5 +1,7 @@
 # `deepcab-platform` CLI
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; canonical config is now `garassino-ml` / `europe-west1` (root `CLAUDE.md` § "GCP architecture"). Project IDs and regions below describe pre-migration state — body kept as historical narrative.
+
 Pythonic alternative to the bash scripts under `scripts/`. Same Typer + Pydantic
 + services/providers pattern as the 001 deepCab CLI — every subcommand wraps a
 service, every service consumes a provider Protocol, and every provider has
@@ -129,17 +131,48 @@ Toggle the dev env between "live demo" (~$15/mo) and "idle" (~$1/mo) without a
 manual TF edit. Wraps `terraform apply -var=showcase_mode=true|false`.
 
 ```bash
-uv run deepcab-platform showcase up   [--env dev] [--dry-run]
+uv run deepcab-platform showcase up   [--env dev] [--ignore-legacy] [--dry-run]
 uv run deepcab-platform showcase down [--env dev] [--dry-run]
 ```
 
-| State | Cloud SQL | Uptime Kuma | Monthly |
+| State | MLflow backend | Uptime Kuma | Monthly |
 |---|---|---|---|
-| `up` | `ALWAYS` | `min_instances=1` | ~$15 |
-| `down` | stopped | `min_instances=0` | ~$1 |
+| `up` | Neon free tier | `min_instances=1` | ~€1 (Kuma) |
+| `down` | Neon free tier | `min_instances=0` | ~€0 idle |
+
+`showcase up` runs a pre-flight check for legacy Cloud SQL / `mlflow_db_password`
+resources in tfstate (leftovers from the pre-2026-06-07 architecture).
+If found, aborts with a red banner pointing at `tf cleanup-legacy`. Pass
+`--ignore-legacy` to override after eyeballing the apply plan.
 
 Source: `deepcab_platform/cli/showcase.py` → `services/showcase.py`
-→ `services/terraform.py`.
+→ `services/terraform.py` + `services/cleanup.py`.
+
+---
+
+### `train-on-vm`
+
+Fire a one-shot GCE training VM. Renders `cloud-manifests/train/startup.sh.tmpl`
+with per-call params + an optional `--extra-env`/`-E` set of `KEY=VAL` pairs
+that land as `-e KEY=value` flags on the in-VM `docker run`. Used by the
+simulation flow's `VmTrainExecutor` to pass the chunk's BQ WHERE clause and
+a deterministic `MLFLOW_RUN_NAME`.
+
+```bash
+uv run deepcab-platform train-on-vm \
+  --backend torch_mlp --data 100k --gpu t4 --spot \
+  -E DATA_SOURCE=query \
+  -E "DATA_BQ_WHERE=pickup_datetime >= TIMESTAMP('2014-01-01') AND pickup_datetime < TIMESTAMP('2014-01-08')" \
+  -E MLFLOW_RUN_NAME=smoke-G
+```
+
+Keys must match `[A-Z_][A-Z0-9_]*` (shell-safe); values are `shlex.quote`'d
+at render time so datetime literals + spaces survive bash array expansion
+intact. Empty `--extra-env` set collapses to no-op (no leaked tokens in
+the rendered script).
+
+Source: `deepcab_platform/cli/train.py` → `services/train.py` →
+`cloud-manifests/train/startup.sh.tmpl`.
 
 ---
 
@@ -175,23 +208,32 @@ Source: `deepcab_platform/cli/kuma.py` → `services/kuma.py`.
 
 ---
 
-### `tf plan|apply|destroy|output|validate`
+### `tf plan|apply|destroy|output|validate|cleanup-legacy`
 
 Thin wrapper around `terraform <action>` scoped to `terraform/envs/<env>/`.
 Auto-runs `terraform init` if `.terraform/` is missing.
 
 ```bash
-uv run deepcab-platform tf plan     --env dev
-uv run deepcab-platform tf apply    --env staging --auto-approve --dry-run
-uv run deepcab-platform tf destroy  --env dev    --auto-approve
-uv run deepcab-platform tf output   --env prod
-uv run deepcab-platform tf validate --env dev
+uv run deepcab-platform tf plan           --env dev
+uv run deepcab-platform tf apply          --env staging --auto-approve --dry-run
+uv run deepcab-platform tf destroy        --env dev    --auto-approve
+uv run deepcab-platform tf output         --env prod
+uv run deepcab-platform tf validate       --env dev
+uv run deepcab-platform tf cleanup-legacy --env dev    --dry-run
 ```
 
 `--dry-run` (where supported) prints the would-be `terraform` invocation
 without executing.
 
-Source: `deepcab_platform/cli/tf.py` → `services/terraform.py`.
+#### `cleanup-legacy`
+
+One-shot sweep of the legacy `module.cloud_sql` + `mlflow-db-password`
+state left over from the 2026-06-07 Cloud SQL → Neon migration. See
+[RUNBOOK §F](RUNBOOK.md#f-migrating-cloud-sql--neon). Idempotent.
+Flags: `--dry-run` (preview), `--yes` / `-y` (skip Cloud SQL delete
+confirmation).
+
+Source: `deepcab_platform/cli/tf.py` → `services/terraform.py` + `services/cleanup.py`.
 
 ---
 

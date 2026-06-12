@@ -1,5 +1,7 @@
 # Deploy deepCab from scratch — no-friction runbook
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; canonical config is now `garassino-ml` / `europe-west1` (root `CLAUDE.md` § "GCP architecture"). Project IDs and regions below describe pre-migration state — body kept as historical narrative.
+
 Two sections:
 
 - **A. Bootstrap** — one-time per GCP project (you do this once per env).
