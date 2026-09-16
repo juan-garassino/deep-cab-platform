@@ -9,7 +9,7 @@ on:
   push:
     branches:
       - main
-      - master
+      - main
     paths:
       - "terraform/**"
       - ".github/workflows/platform-apply.yml"
