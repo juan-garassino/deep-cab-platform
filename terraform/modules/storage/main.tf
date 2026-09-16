@@ -1,72 +1,72 @@
 # GCS buckets backing the deepCab stack.
 #
+# Shared defaults (project, location, storage_class, UBLA, force_destroy, labels)
+# live in `local.bucket_defaults`. Each `google_storage_bucket` resource is kept
+# as a distinct named address — state-stable — and only spells out the fields
+# that diverge from the defaults plus its lifecycle/versioning blocks.
+#
 # - mlflow-artifacts: artifact store for MLflow runs (referenced by MLFLOW_ARTIFACT_URI)
-# - deepcab-models:    trained-model artifacts written by the retrain job / registry.dispatcher
-# - tfstate:           remote state bucket. CHICKEN-AND-EGG — created manually first
-#                      (see RUNBOOK.md), then imported. The TF block here makes the
-#                      bucket subject to drift detection after import.
+# - models:           trained-model artifacts written by the retrain job / registry.dispatcher
+# - status_state:     gcsfuse-mounted into the Uptime Kuma container (SQLite live-rewrites,
+#                     so no versioning, no lifecycle)
+# - tfstate:          remote state bucket. CHICKEN-AND-EGG — created manually first
+#                     (see RUNBOOK.md), then imported. force_destroy hard-pinned to false.
+
+module "labels" {
+  source       = "../_labels"
+  env          = var.env
+  component    = "deepcab-platform"
+  extra_labels = var.labels
+}
 
 locals {
-  bucket_labels = merge(
-    var.labels,
-    {
-      env       = var.env
-      managed   = "terraform"
-      component = "deepcab-platform"
-    }
-  )
+  bucket_defaults = {
+    project                     = var.project_id
+    location                    = var.region
+    storage_class               = "STANDARD"
+    uniform_bucket_level_access = true
+    force_destroy               = var.force_destroy
+    labels                      = module.labels.labels
+  }
 }
 
 resource "google_storage_bucket" "mlflow_artifacts" {
   name                        = "${var.name_prefix}-mlflow-artifacts-${var.env}"
-  project                     = var.project_id
-  location                    = var.region
-  storage_class               = "STANDARD"
-  uniform_bucket_level_access = true
-  force_destroy               = var.force_destroy
-  labels                      = local.bucket_labels
+  project                     = local.bucket_defaults.project
+  location                    = local.bucket_defaults.location
+  storage_class               = local.bucket_defaults.storage_class
+  uniform_bucket_level_access = local.bucket_defaults.uniform_bucket_level_access
+  force_destroy               = local.bucket_defaults.force_destroy
+  labels                      = local.bucket_defaults.labels
 
-  versioning {
-    enabled = true
-  }
+  versioning { enabled = true }
 
   lifecycle_rule {
-    condition {
-      age = var.mlflow_artifacts_lifecycle_days
-    }
+    condition { age = var.mlflow_artifacts_lifecycle_days }
     action {
       type          = "SetStorageClass"
       storage_class = "NEARLINE"
     }
   }
-
   lifecycle_rule {
-    condition {
-      num_newer_versions = 5
-    }
-    action {
-      type = "Delete"
-    }
+    condition { num_newer_versions = 5 }
+    action { type = "Delete" }
   }
 }
 
 resource "google_storage_bucket" "models" {
   name                        = "${var.name_prefix}-models-${var.env}"
-  project                     = var.project_id
-  location                    = var.region
-  storage_class               = "STANDARD"
-  uniform_bucket_level_access = true
-  force_destroy               = var.force_destroy
-  labels                      = local.bucket_labels
+  project                     = local.bucket_defaults.project
+  location                    = local.bucket_defaults.location
+  storage_class               = local.bucket_defaults.storage_class
+  uniform_bucket_level_access = local.bucket_defaults.uniform_bucket_level_access
+  force_destroy               = local.bucket_defaults.force_destroy
+  labels                      = local.bucket_defaults.labels
 
-  versioning {
-    enabled = true
-  }
+  versioning { enabled = true }
 
   lifecycle_rule {
-    condition {
-      age = var.models_archive_days
-    }
+    condition { age = var.models_archive_days }
     action {
       type          = "SetStorageClass"
       storage_class = "COLDLINE"
@@ -75,41 +75,35 @@ resource "google_storage_bucket" "models" {
 }
 
 resource "google_storage_bucket" "status_state" {
-  # SQLite + asset storage for the Uptime Kuma status page (gcsfuse-mounted
-  # at /app/data inside the cloud_run_status service). Small bucket; no
-  # versioning needed since the SQLite file rewrites in place.
+  # gcsfuse-mounted at /app/data inside cloud_run_status. SQLite rewrites in place;
+  # no versioning needed.
   name                        = "${var.name_prefix}-status-${var.env}"
-  project                     = var.project_id
-  location                    = var.region
-  storage_class               = "STANDARD"
-  uniform_bucket_level_access = true
-  force_destroy               = var.force_destroy
-  labels                      = local.bucket_labels
+  project                     = local.bucket_defaults.project
+  location                    = local.bucket_defaults.location
+  storage_class               = local.bucket_defaults.storage_class
+  uniform_bucket_level_access = local.bucket_defaults.uniform_bucket_level_access
+  force_destroy               = local.bucket_defaults.force_destroy
+  labels                      = local.bucket_defaults.labels
 }
 
 resource "google_storage_bucket" "tfstate" {
-  # The state bucket is bootstrapped manually before `terraform init`;
-  # this resource exists so it becomes part of state once imported, allowing
-  # drift detection and labels/versioning to be managed via TF going forward.
+  # Bootstrapped manually, then imported. force_destroy override stays false in
+  # every env — state buckets must never be auto-deleted.
   name                        = "${var.name_prefix}-tfstate-${var.env}"
-  project                     = var.project_id
-  location                    = var.region
-  storage_class               = "STANDARD"
-  uniform_bucket_level_access = true
-  force_destroy               = false # never auto-delete state
-  labels                      = local.bucket_labels
+  project                     = local.bucket_defaults.project
+  location                    = local.bucket_defaults.location
+  storage_class               = local.bucket_defaults.storage_class
+  uniform_bucket_level_access = local.bucket_defaults.uniform_bucket_level_access
+  force_destroy               = false # explicit override
+  labels                      = local.bucket_defaults.labels
 
-  versioning {
-    enabled = true
-  }
+  versioning { enabled = true }
 
   lifecycle_rule {
     condition {
       num_newer_versions = 30
       age                = 30
     }
-    action {
-      type = "Delete"
-    }
+    action { type = "Delete" }
   }
 }

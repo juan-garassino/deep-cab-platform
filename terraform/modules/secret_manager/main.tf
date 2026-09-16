@@ -8,16 +8,14 @@
 # stored in GCS and read by CI). Declaring the containers in TF is enough to
 # enforce IAM and lifecycle.
 
-locals {
-  secret_labels = merge(
-    var.labels,
-    {
-      env       = var.env
-      managed   = "terraform"
-      component = "deepcab-platform"
-    }
-  )
+module "labels" {
+  source       = "../_labels"
+  env          = var.env
+  component    = "deepcab-platform"
+  extra_labels = var.labels
+}
 
+locals {
   secret_set = toset(var.secret_ids)
 }
 
@@ -25,7 +23,7 @@ resource "google_secret_manager_secret" "this" {
   for_each  = local.secret_set
   project   = var.project_id
   secret_id = each.value
-  labels    = local.secret_labels
+  labels    = module.labels.labels
 
   replication {
     user_managed {
