@@ -1,5 +1,7 @@
 # Environments
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; the staging/prod env tiers are DEPRECATED. Only `dev` is funded under the €25/mo workspace cap, targeting `garassino-ml` / `europe-west1` in show-and-destroy mode. Body below describes the original three-env design — kept as historical narrative.
+
 Three GCP projects, one per env. Same Terraform module set; per-env composition
 in `terraform/envs/<env>/`.
 

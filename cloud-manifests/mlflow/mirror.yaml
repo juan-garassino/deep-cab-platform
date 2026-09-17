@@ -15,10 +15,10 @@ steps:
     args:
       - 'tag'
       - 'ghcr.io/mlflow/mlflow:v2.16.2'
-      - 'us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2'
+      - 'europe-west1-docker.pkg.dev/garassino-ml/deepcab/mlflow:v2.16.2'
 
 images:
-  - 'us-central1-docker.pkg.dev/deepcab-dev/deepcab/mlflow:v2.16.2'
+  - 'europe-west1-docker.pkg.dev/garassino-ml/deepcab/mlflow:v2.16.2'
 
 options:
   logging: CLOUD_LOGGING_ONLY

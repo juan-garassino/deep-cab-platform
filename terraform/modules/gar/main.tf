@@ -17,7 +17,7 @@ resource "google_artifact_registry_repository" "deepcab" {
     id     = "keep-tagged-recent"
     action = "KEEP"
     most_recent_versions {
-      package_name_prefixes = ["api", "retrain", "website"]
+      package_name_prefixes = ["api", "retrain", "website", "mlflow"]
       keep_count            = 10
     }
   }

@@ -11,32 +11,40 @@ Every other knob lives here.
 terraform/
 ├── modules/         # reusable building blocks (provider versions pinned per module)
 └── envs/
-    ├── _shared/     # env_config.tf — single source of truth for per-env values
+    ├── _shared/     # env_config.tf — canonical per-env config map (data-only)
     │                #   (tiers, CIDRs, role lists, instance counts, paused flags)
-    ├── dev/         # composition: reads `module.env_config.cfg`, wires modules
+    ├── dev/         # composition: instantiates modules for this env
     ├── staging/
     └── prod/
 ```
 
-Each env's `main.tf` is now a thin composition: it instantiates
-`module "env_config" { source = "../_shared"; env = local.env }` and threads
-`local.cfg.<module_key>.*` into each downstream module call. To change a
-per-env knob (Cloud SQL tier, scheduler paused, IAM role list, etc.) edit
-`envs/_shared/env_config.tf` — never the env `main.tf` files. Truly per-env
-operator-supplied values (project IDs, project numbers, DNS zone names,
-images) stay in `terraform.tfvars` / `variables.tf`.
+`envs/_shared/env_config.tf` is the single source of truth for everything that
+varies per env (Cloud SQL tier, scaling, IAM role lists, scheduler paused, VPC
+CIDRs, DNS/GKE toggles, budget, storage force_destroy). It is a pure-data module
+exposing `module.env_config.cfg`. The design intent is that each env's `main.tf`
+reads `module "env_config" { source = "../_shared"; env = local.env }` and threads
+`local.cfg.<module_key>.*` into each downstream module — the caller-supplied env
+override lands last, so it wins.
+
+> Note: the env `main.tf` files still carry inlined literals; rewiring each env to
+> consume `local.cfg.*` is a deliberate follow-up (deferred so it wouldn't collide
+> with the `cloud_run_service` module consolidation). Until then, treat
+> `env_config.tf` as the intended source of truth and keep the two in sync when you
+> touch a per-env value. Truly per-env operator-supplied values (project IDs,
+> project numbers, DNS zone names, images) stay in `terraform.tfvars` /
+> `variables.tf`.
 
 ## Modules
 
 | Module | Resource(s) | Status |
 |---|---|---|
+| `_labels` | Shared `{env, managed, component}` label assembler (Wave 2 / S3) — no resources, pure HCL locals | helper (consumed by `storage`, `secret_manager`, ...) |
 | `gar` | Artifact Registry repo (with cleanup policies) | always-on |
 | `storage` | 3 GCS buckets (mlflow, models, tfstate) | always-on |
 | `cloud_sql` | Cloud SQL Postgres + databases + users | always-on |
 | `secret_manager` | Secret containers + accessor IAM | always-on |
 | `wif` | Workload Identity Pool + Provider + 4 SAs + bindings | always-on |
-| `cloud_run` | `deepcab-api` service (v2) | always-on |
-| `cloud_run_website` | `deepcab-website` service (v2) — nginx-served Vite SPA | always-on |
+| `cloud_run_service` | Generic `google_cloud_run_v2_service` (Wave 2 / S1) — instantiated once per workload: api, website, mlflow, status. Replaces the former `cloud_run`, `cloud_run_website`, `cloud_run_mlflow`, `cloud_run_status` quartet. | always-on |
 | `cloud_run_job` | `deepcab-retrain` job (v2) | always-on |
 | `scheduler` | Cloud Scheduler firing the job | always-on |
 | `vpc` | VPC + Cloud NAT + private services connection | gated (`enabled = false` in dev) |
@@ -44,11 +52,16 @@ images) stay in `terraform.tfvars` / `variables.tf`.
 | `dns` | Managed zone records | gated (empty `zone_name` disables) |
 | `iam` | Cross-cutting bindings + billing budget | always-on (mostly no-ops without inputs) |
 
+Total: **13 modules** (12 resource-bearing + 1 `_labels` helper). All four
+former `cloud_run_*` flavours now share the single `cloud_run_service`
+module, each declared once per env in `envs/<env>/main.tf`.
+
 ## Envs
 
-All per-env values below are sourced from `envs/_shared/env_config.tf`. Update
-that file (not the per-env `main.tf`) to change a tier, instance count, or
-role list.
+The canonical per-env values live in `envs/_shared/env_config.tf` (see above).
+When changing a tier, instance count, or role list, update that map — and, until
+the env `main.tf` files are rewired to read `local.cfg.*`, mirror the change in
+the matching env `main.tf`.
 
 | Env | API (Cloud Run) | Website (Cloud Run) | Cloud SQL | VPC | DNS | GKE | Budget |
 |---|---|---|---|---|---|---|---|

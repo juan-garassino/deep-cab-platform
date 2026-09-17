@@ -1,5 +1,7 @@
 # CONFIG — environment model
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; canonical config is now `garassino-ml` / `europe-west1` (root `CLAUDE.md` § "GCP architecture"). Project IDs and regions below describe pre-migration state — body kept as historical narrative.
+
 deepCab uses one environment variable, `DEEPCAB_ENV`, to switch every layer
 between local development and the three GCP environments. This doc is the
 canonical reference for that model.
@@ -48,6 +50,46 @@ Pydantic-settings then picks `.env.<env>` and overlays per-prefix env vars on to
 - **MLflow image version**: pinned in TF (`cloud_run_mlflow.image`), refreshed via `make mlflow_mirror` independent of env.
 - **Uptime Kuma version**: pinned in `cloud_run_status` TF module.
 - **gh repo names**: hardcoded as defaults (`deepCab`, `deepCab-platform`, `deepCab-website`) — overridable per env if you ever fork.
+
+## Rotating secrets
+
+Secret values aren't read from `.env.<env>` files — those only hold the
+*identifiers* (which Cloud Run service uses which Secret Manager secret).
+The values live in Secret Manager, populated either by Terraform
+(`mlflow-db-password`, `kuma-admin-password`) or manually after the first
+apply (`openai-api-key`, `deepcab-api-key`, `slack-webhook-url`).
+
+To rotate one in-place:
+
+```bash
+echo "$NEW_VALUE" | uv run deepcab-platform secrets rotate <secret-id> \
+  --from-stdin --project-id $(uv run deepcab-platform tf output --env dev | grep project_id | awk -F\" '{print $2}')
+```
+
+That command pushes a new version AND triggers a Cloud Run revision swap on
+every service that consumes the secret (the mapping is in
+`services/secrets.py::_default_consumers`). Without the revision swap, the
+running container keeps reading the old value — Cloud Run binds secret env
+vars at revision-creation time, not at request time.
+
+## CI notifications (Slack + Telegram)
+
+Every deploy/apply workflow fires notification steps per outcome
+(starting / success / failure) to each configured channel. Both Slack and
+Telegram run in parallel — set zero, one, or both of:
+
+| Secret | What | How to get it |
+| --- | --- | --- |
+| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL. Discord works too — append `/slack` to a Discord webhook URL. | Slack app settings → Incoming Webhooks. |
+| `TELEGRAM_BOT_TOKEN` | Bot token | Message **@BotFather** in Telegram → `/newbot` → copy the token. |
+| `TELEGRAM_CHAT_ID` | Where the bot sends messages | Message your new bot once, then `curl https://api.telegram.org/bot<TOKEN>/getUpdates` and parse `result[0].message.chat.id`. |
+
+Each step has `continue-on-error: true` and a `[ -z "$TG_BOT" ] && exit 0`
+guard, so missing secrets just no-op — they never fail a deploy. Set both
+sets and you get a Slack ping AND a Telegram ping for every event.
+
+Push values into the 3 repos via `make sync_gh` after filling
+`scripts/gh-secrets.env`.
 
 ## Things `DEEPCAB_ENV` does NOT replace
 

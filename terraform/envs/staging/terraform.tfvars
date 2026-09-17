@@ -1,3 +1,8 @@
+# DEPRECATED 2026-06-06: deepcab-staging project does not exist. After consolidation
+# into the 3-project model (garassino-ml/ai/op), there is only one cost-capped target
+# under the €25/mo cap. Use envs/dev for show-and-destroy demos. This file is kept
+# as a reference for what a staging tier looked like; do not `terraform apply` here.
+
 project_id     = "deepcab-staging"
 project_number = "000000000000"
 region         = "us-central1"

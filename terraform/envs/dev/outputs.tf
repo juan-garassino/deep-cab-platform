@@ -39,7 +39,7 @@ output "runtime_sa_email" {
 
 output "api_service_url" {
   description = "Cloud Run URL of the deepcab-api service."
-  value       = module.cloud_run.service_url
+  value       = module.cloud_run_api.service_url
 }
 
 output "website_service_url" {
@@ -61,6 +61,18 @@ output "retrain_job_name" {
   value = module.cloud_run_job.job_name
 }
 
-output "cloud_sql_connection_name" {
-  value = module.cloud_sql.connection_name
+# cloud_sql_connection_name output removed 2026-06-07 alongside the cloud_sql
+# module — MLflow now uses Neon, not Cloud SQL.
+
+output "bq_qualified_table" {
+  description = "Fully-qualified BQ table for the simulation loop (project.dataset.table)."
+  value       = module.bigquery.qualified_table
+}
+
+output "bq_dataset_id" {
+  value = module.bigquery.dataset_id
+}
+
+output "bq_location" {
+  value = module.bigquery.location
 }

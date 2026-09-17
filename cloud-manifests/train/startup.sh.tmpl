@@ -1,0 +1,89 @@
+#!/bin/bash
+# VM startup script for deepCab training. Rendered by TrainOnVmService.launch()
+# at CLI-invocation time — ${PLACEHOLDERS} get replaced with real values.
+#
+# Flow:
+#   1. Pull our deepcab/api image from GAR (CUDA wheels if GPU=1)
+#   2. Run `python -m deepCab.training.train backend=X data=Y`
+#   3. The api image's `registry.dispatcher` uploads the model to GCS and
+#      logs the run to MLflow (REGISTRY_TARGET=gcs + MLFLOW_TRACKING_URI).
+#   4. Send Telegram start/success/failure pings (no-op if TG_BOT empty).
+#   5. Self-destruct (auto_delete=true → gcloud compute instances delete).
+#
+# The `--max-run-duration` flag on `gcloud compute instances create` is the
+# belt-and-suspenders: GCP itself stops the VM at that timeout regardless
+# of this script's state.
+
+set -euo pipefail
+
+# ---------------- rendered placeholders ----------------
+PROJECT_ID="${PROJECT_ID}"
+BACKEND="${BACKEND}"
+DATA="${DATA}"
+IMAGE="${IMAGE}"
+MODELS_BUCKET="${MODELS_BUCKET}"
+MLFLOW_URL="${MLFLOW_URL}"
+TG_BOT="${TG_BOT}"
+TG_CHAT="${TG_CHAT}"
+AUTO_DELETE="${AUTO_DELETE}"
+GPU="${GPU}"
+# -------------------------------------------------------
+
+INSTANCE_NAME=$(curl -sH 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/name)
+ZONE=$(curl -sH 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print $NF}')
+RUN_ID="$(date +%Y%m%dT%H%M%S)-${BACKEND}-${DATA}"
+
+notify() {
+  [ -z "$TG_BOT" ] && return 0
+  curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+    -d chat_id="$TG_CHAT" -d parse_mode=Markdown -d text="$1" >/dev/null || true
+}
+
+self_destruct() {
+  if [ "$AUTO_DELETE" = "true" ]; then
+    notify "🧹 deleting VM \`$INSTANCE_NAME\`"
+    gcloud --quiet compute instances delete "$INSTANCE_NAME" --zone="$ZONE" || true
+  fi
+}
+
+trap 'notify "❌ *deepCab train* on VM \`$INSTANCE_NAME\` FAILED · run=\`$RUN_ID\`"; self_destruct' ERR
+
+notify "🚀 *deepCab train* starting · run=\`$RUN_ID\` · backend=\`$BACKEND\` · data=\`$DATA\` · vm=\`$INSTANCE_NAME\` · gpu=\`$GPU\`"
+
+# Authenticate Docker to GAR (uses the VM's attached service account)
+gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+# Pull the image — Cloud Run side has it cached too; first VM cold-pull is
+# usually 60-120s on a fresh n1-standard-4.
+docker pull "$IMAGE"
+
+# Hand off to the api container's training entrypoint.
+# REGISTRY_TARGET=gcs + REGISTRY_GCS_BUCKET tells registry.dispatcher to upload
+# the trained model to gs://<bucket>/runs/<run_id>/ alongside the MLflow log.
+docker_args=(
+  --rm
+  --name deepcab-train
+  -e DEEPCAB_ENV=dev
+  -e MLFLOW_TRACKING_URI="$MLFLOW_URL"
+  -e MLFLOW_EXPERIMENT=deepcab-vm-train
+  -e MLFLOW_RUN_NAME="$RUN_ID"
+  -e REGISTRY_TARGET=gcs
+  -e REGISTRY_GCS_BUCKET="$MODELS_BUCKET"
+  -e GCP_PROJECT="$PROJECT_ID"
+)
+# Caller-supplied env overrides land last so they win on conflict (e.g.
+# the simulate flow sets MLFLOW_RUN_NAME + MLFLOW_EXPERIMENT to its
+# deterministic per-chunk names). Empty when no --extra-env was passed.
+extra_env_flags=(${EXTRA_DOCKER_ENV})
+if [ ${#extra_env_flags[@]} -gt 0 ]; then
+  docker_args+=("${extra_env_flags[@]}")
+fi
+if [ "$GPU" != "none" ]; then
+  docker_args+=(--gpus all)
+fi
+
+docker run "${docker_args[@]}" "$IMAGE" \
+  python -m deepCab.training.train "backend=$BACKEND" "data=$DATA"
+
+notify "✅ *deepCab train* DONE · run=\`$RUN_ID\` · model in \`gs://$MODELS_BUCKET/runs/$RUN_ID/\`"
+self_destruct

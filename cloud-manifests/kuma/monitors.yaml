@@ -1,0 +1,61 @@
+# Uptime Kuma seed config — declares the monitors that `deepcab-platform kuma
+# seed` POSTs against the deepcab-status service on first deploy (and on
+# `--force` re-seeds).
+#
+# Validated against deepcab_platform.schemas.kuma.KumaSeedConfig — extra keys
+# fail loudly.
+#
+# Templating: URL values use Bash-style ${VAR} interpolation; the seeder reads
+# the matching env var (typically the corresponding `terraform output -raw
+# <var>` value) before validation.
+#
+# Replace the URLs below with `terraform output -raw <var>` from the target
+# env. The dev values are pinned here as a working starting point.
+
+admin_user: admin
+admin_password_env_var: KUMA_ADMIN_PASSWORD
+
+monitors:
+  - name: deepcab-api
+    type: http
+    url: https://deepcab-api-vkj76snh3q-uc.a.run.app/readyz
+    interval_seconds: 60
+    retry_interval_seconds: 60
+    max_retries: 2
+    accepted_status_codes: ["200-299"]
+    description: |
+      FastAPI inference service. /readyz returns 200 when the model is loaded
+      and DB connection is good. Note: /healthz is intercepted by Google
+      Frontend on Cloud Run, so we use /readyz externally — the container's
+      internal /healthz is what Cloud Run uses for its own startup probe.
+    tags: [api]
+
+  - name: deepcab-website
+    type: http
+    url: https://deepcab-website-vkj76snh3q-uc.a.run.app/
+    interval_seconds: 60
+    retry_interval_seconds: 60
+    max_retries: 2
+    accepted_status_codes: ["200-299"]
+    description: nginx-served React SPA (Predict / Explain / Runs pages).
+    tags: [website]
+
+  - name: deepcab-mlflow
+    type: http
+    url: https://deepcab-mlflow-vkj76snh3q-uc.a.run.app/
+    interval_seconds: 120
+    retry_interval_seconds: 60
+    max_retries: 2
+    accepted_status_codes: ["200-299"]
+    description: MLflow tracking server (Cloud SQL backed). Cold starts ~30s.
+    tags: [mlflow]
+
+  - name: deepcab-status
+    type: http
+    url: https://deepcab-status-vkj76snh3q-uc.a.run.app/
+    interval_seconds: 300
+    retry_interval_seconds: 60
+    max_retries: 2
+    accepted_status_codes: ["200-299"]
+    description: Self-check — the status page monitors itself.
+    tags: [status]

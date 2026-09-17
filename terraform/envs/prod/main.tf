@@ -1,7 +1,6 @@
 # ----------------------------------------------------------------------------
 # deepCab — PROD environment composition
 #
-# Thin composition: per-env shape lives in ../_shared/env_config.tf.
 # Highest tier. Private-IP Cloud SQL with REGIONAL HA + PITR. DNS enabled.
 # GKE toggleable via var.enable_gke. Budget alert at $200/mo by default.
 # ----------------------------------------------------------------------------
@@ -16,15 +15,6 @@ locals {
   }
 }
 
-module "env_config" {
-  source = "../_shared"
-  env    = local.env
-}
-
-locals {
-  cfg = module.env_config.cfg
-}
-
 module "gar" {
   source     = "../../modules/gar"
   project_id = var.project_id
@@ -37,7 +27,7 @@ module "storage" {
   project_id    = var.project_id
   region        = var.region
   env           = local.env
-  force_destroy = local.cfg.storage.force_destroy
+  force_destroy = false
   labels        = local.common_labels
 }
 
@@ -50,9 +40,27 @@ module "wif" {
   platform_gh_repo = var.gh_platform_repo
   website_gh_repo  = var.gh_website_repo
 
-  # Prod tightens both role lists. No `roles/editor`.
-  deployer_project_roles  = local.cfg.wif.deployer_project_roles
-  terraform_project_roles = local.cfg.wif.terraform_project_roles
+  # Prod: tighten the deployer/terraform roles. No `roles/editor`.
+  deployer_project_roles = [
+    "roles/run.developer",
+    "roles/artifactregistry.writer",
+    "roles/iam.serviceAccountUser",
+    "roles/storage.objectAdmin",
+  ]
+
+  terraform_project_roles = [
+    "roles/run.admin",
+    "roles/cloudsql.admin",
+    "roles/storage.admin",
+    "roles/secretmanager.admin",
+    "roles/artifactregistry.admin",
+    "roles/iam.workloadIdentityPoolAdmin",
+    "roles/iam.serviceAccountAdmin",
+    "roles/resourcemanager.projectIamAdmin",
+    "roles/compute.networkAdmin",
+    "roles/cloudscheduler.admin",
+    "roles/container.admin",
+  ]
 
   labels = local.common_labels
 }
@@ -71,10 +79,10 @@ module "vpc" {
   project_id            = var.project_id
   region                = var.region
   env                   = local.env
-  enabled               = local.cfg.vpc.enabled
-  subnet_cidr           = local.cfg.vpc.subnet_cidr
-  private_services_cidr = local.cfg.vpc.private_services_cidr
-  enable_nat            = local.cfg.vpc.enable_nat
+  enabled               = true
+  subnet_cidr           = "10.60.0.0/20"
+  private_services_cidr = "10.70.0.0/16"
+  enable_nat            = true
 }
 
 module "cloud_sql" {
@@ -83,40 +91,52 @@ module "cloud_sql" {
   region     = var.region
   env        = local.env
 
-  tier                = local.cfg.cloud_sql.tier
-  disk_size_gb        = local.cfg.cloud_sql.disk_size_gb
-  deletion_protection = local.cfg.cloud_sql.deletion_protection
-  use_private_ip      = local.cfg.cloud_sql.use_private_ip
-  backup_enabled      = local.cfg.cloud_sql.backup_enabled
-  authorized_networks = local.cfg.cloud_sql.authorized_networks
+  tier                = "db-custom-2-4096"
+  disk_size_gb        = 50
+  deletion_protection = true
+  use_private_ip      = true
   private_network     = module.vpc.network_self_link
+  backup_enabled      = true
 
   labels = local.common_labels
 
   depends_on = [module.vpc]
 }
 
-module "cloud_run" {
-  source     = "../../modules/cloud_run"
+module "cloud_run_api" {
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-api"
+  component             = "cloud-run-api"
   image                 = var.api_image
   service_account_email = module.wif.runtime_sa_email
 
-  cpu                   = local.cfg.cloud_run_api.cpu
-  memory                = local.cfg.cloud_run_api.memory
-  min_instances         = local.cfg.cloud_run_api.min_instances
-  max_instances         = local.cfg.cloud_run_api.max_instances
-  container_concurrency = local.cfg.cloud_run_api.container_concurrency
-  timeout_seconds       = local.cfg.cloud_run_api.timeout_seconds
+  cpu                   = "2"
+  memory                = "2Gi"
+  min_instances         = 1
+  max_instances         = 10
+  container_concurrency = 80
+  timeout_seconds       = 60
+  container_port        = 8000
   allow_unauthenticated = true
 
-  cloudsql_instances = [module.cloud_sql.connection_name]
+  volumes = [
+    {
+      name                = "cloudsql"
+      type                = "cloud_sql"
+      cloud_sql_instances = [module.cloud_sql.connection_name]
+    },
+  ]
+
+  volume_mounts = [
+    { name = "cloudsql", mount_path = "/cloudsql" },
+  ]
 
   env_vars = {
-    APP_ENV             = local.env
+    APP_ENV             = "prod"
     PORT                = "8000"
     MLFLOW_TRACKING_URI = var.mlflow_tracking_uri
     MODEL_TARGET        = "gcs"
@@ -136,21 +156,41 @@ module "cloud_run" {
   depends_on = [module.secrets, module.gar]
 }
 
+moved {
+  from = module.cloud_run.google_cloud_run_v2_service.this
+  to   = module.cloud_run_api.google_cloud_run_v2_service.this
+}
+
+moved {
+  from = module.cloud_run.google_cloud_run_v2_service_iam_member.public
+  to   = module.cloud_run_api.google_cloud_run_v2_service_iam_member.public
+}
+
 module "cloud_run_website" {
-  source     = "../../modules/cloud_run_website"
+  source     = "../../modules/cloud_run_service"
   project_id = var.project_id
   region     = var.region
   env        = local.env
 
+  service_name          = "deepcab-website"
+  component             = "cloud-run-website"
   image                 = var.website_image
   service_account_email = module.wif.runtime_sa_email
 
-  cpu                   = local.cfg.cloud_run_website.cpu
-  memory                = local.cfg.cloud_run_website.memory
-  min_instances         = local.cfg.cloud_run_website.min_instances
-  max_instances         = local.cfg.cloud_run_website.max_instances
-  container_concurrency = local.cfg.cloud_run_website.container_concurrency
+  cpu                   = "1"
+  memory                = "512Mi"
+  min_instances         = 2
+  max_instances         = 10
+  container_concurrency = 200
+  timeout_seconds       = 30
+  container_port        = 80
   allow_unauthenticated = true
+
+  startup_probe_path                  = "/"
+  liveness_probe_path                 = "/"
+  startup_probe_initial_delay_seconds = 1
+  startup_probe_failure_threshold     = 10
+  liveness_probe_period_seconds       = 30
 
   labels = local.common_labels
 
@@ -167,21 +207,21 @@ module "cloud_run_job" {
   service_account_email = module.wif.runtime_sa_email
   scheduler_sa_email    = module.wif.scheduler_sa_email
 
-  cpu                  = local.cfg.cloud_run_job.cpu
-  memory               = local.cfg.cloud_run_job.memory
-  task_timeout_seconds = local.cfg.cloud_run_job.task_timeout_seconds
+  cpu                  = "4"
+  memory               = "8Gi"
+  task_timeout_seconds = 3600
 
   args = [
     "-m",
     "deepCab.training.train",
     "backend=tf_mlp",
-    "data=${local.cfg.cloud_run_job.data_size}",
+    "data=full",
   ]
 
   cloudsql_instances = [module.cloud_sql.connection_name]
 
   env_vars = {
-    APP_ENV             = local.env
+    APP_ENV             = "prod"
     MLFLOW_TRACKING_URI = var.mlflow_tracking_uri
     MODEL_TARGET        = "gcs"
     GCP_PROJECT         = var.project_id
@@ -205,7 +245,7 @@ module "scheduler" {
 
   target_uri            = module.cloud_run_job.execute_uri
   service_account_email = module.wif.scheduler_sa_email
-  paused                = local.cfg.scheduler.paused
+  paused                = false
 }
 
 module "dns" {
@@ -213,7 +253,7 @@ module "dns" {
   project_id = var.project_id
   env        = local.env
 
-  enabled     = local.cfg.dns.enabled && var.dns_zone_name != ""
+  enabled     = var.dns_zone_name != ""
   zone_name   = var.dns_zone_name
   dns_name    = var.dns_name
   create_zone = false
@@ -243,9 +283,7 @@ module "gke" {
   region     = var.region
   env        = local.env
 
-  # cfg.gke.enabled marks "this env may run GKE"; the operator-supplied
-  # var.enable_gke is the actual on/off toggle.
-  enabled          = local.cfg.gke.enabled && var.enable_gke
+  enabled          = var.enable_gke
   network          = module.vpc.network_self_link
   subnet           = module.vpc.subnet_id
   runtime_sa_email = module.wif.runtime_sa_email
@@ -258,9 +296,7 @@ module "iam" {
   project_id = var.project_id
   env        = local.env
 
-  # Budget defaults pulled from cfg; alert email + billing_account are
-  # operator-supplied via terraform.tfvars.
   budget_alert_email = var.budget_alert_email
-  budget_amount_usd  = var.budget_amount_usd != 0 ? var.budget_amount_usd : local.cfg.iam.budget_amount_usd
+  budget_amount_usd  = var.budget_amount_usd
   billing_account    = var.billing_account
 }

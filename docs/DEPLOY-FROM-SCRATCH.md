@@ -1,5 +1,7 @@
 # Deploy deepCab from scratch — no-friction runbook
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; canonical config is now `garassino-ml` / `europe-west1` (root `CLAUDE.md` § "GCP architecture"). Project IDs and regions below describe pre-migration state — body kept as historical narrative.
+
 Two sections:
 
 - **A. Bootstrap** — one-time per GCP project (you do this once per env).
@@ -45,18 +47,24 @@ gcloud billing accounts list
 # 01B30C-8DE544-29E214  garassino-billing   True       <-- the OPEN one
 ```
 
-### A.2. Run the bootstrap script
+### A.2. Run the bootstrap CLI
 
 ```bash
 cd 002-deepCab-platform
+uv sync --extra dev                                            # one-time
 
-# `ENV` controls the state-bucket name (gs://deepcab-tfstate-<ENV>) and labels.
-# `PROJECT_ID` must be globally unique on GCP.
-BILLING_ACCOUNT=01B30C-8DE544-29E214 \
-PROJECT_ID=deepcab-dev \
-ENV=dev \
-make bootstrap_gcp
+# `--env` controls the state-bucket name (gs://deepcab-tfstate-<env>) and labels.
+# `--project-id` must be globally unique on GCP.
+uv run deepcab-platform bootstrap \
+  --env dev \
+  --billing-account 01B30C-8DE544-29E214 \
+  --project-id deepcab-dev
 ```
+
+(Or the Makefile alias: `BILLING_ACCOUNT=… PROJECT_ID=deepcab-dev ENV=dev make bootstrap_gcp`.)
+
+Add `--dry-run` to see every `gcloud` call without executing — useful for code
+review or pre-flight sanity.
 
 This does (idempotent — safe to re-run):
 
@@ -68,6 +76,7 @@ This does (idempotent — safe to re-run):
 6. Create the `deepcab-terraform` SA bound to the platform GH repo
 
 Output prints the values you need for the next step. Capture them.
+See [`docs/CLI.md`](./CLI.md) for the full subcommand reference.
 
 ### A.3. Fill in the dotenv files
 
@@ -90,25 +99,30 @@ For now `gh-vars.api.env` / `gh-vars.website.env` defaults are fine; tune later.
 
 ```bash
 cd 002-deepCab-platform
-make sync_gh
+uv run deepcab-platform sync-gh           # or: make sync_gh
 ```
 
 Wraps `gh variable set -f` + `gh secret set -f` and uploads to all of
 `juan-garassino/deepCab`, `juan-garassino/deepCab-platform`,
-`juan-garassino/deepCab-website`.
+`juan-garassino/deepCab-website`. Renders a Rich table with the per-repo
+results. Secrets with empty values are skipped (so partial `.env` files are
+safe).
 
 ### A.5. First terraform apply (creates everything else)
 
 ```bash
-cd 002-deepCab-platform/terraform/envs/dev
-terraform init
-terraform apply
+cd 002-deepCab-platform
+uv run deepcab-platform tf apply --env dev      # or: make ENV=dev apply
 ```
 
+(Auto-runs `terraform init` if `.terraform/` is missing. `--dry-run` prints
+the would-be command without invoking terraform.)
+
 This creates: GAR, deployer SA, runtime SA, scheduler SA, Cloud SQL,
-Cloud Run service (api), Cloud Run service (website), Cloud Run Job
-(retrain), Cloud Scheduler (paused in dev), Secret Manager containers,
-GCS buckets, IAM bindings. Takes ~5 minutes.
+Cloud Run services (api, website, mlflow, status — all four spun up from
+the consolidated `cloud_run_service` module), Cloud Run Job (retrain),
+Cloud Scheduler (paused in dev), Secret Manager containers, GCS buckets,
+IAM bindings. Takes ~5 minutes.
 
 ### A.6. Populate the Secret Manager containers (TF only declares them)
 
@@ -117,7 +131,41 @@ echo -n "<your-openai-key>"   | gcloud secrets versions add openai-api-key   --d
 echo -n "<your-deepcab-key>"  | gcloud secrets versions add deepcab-api-key  --data-file=- --project=deepcab-dev
 echo -n "<slack-or-discord>"  | gcloud secrets versions add slack-webhook-url --data-file=- --project=deepcab-dev
 echo -n "<db-password>"       | gcloud secrets versions add mlflow-db-password --data-file=- --project=deepcab-dev
+echo -n "<kuma-admin-pw>"     | gcloud secrets versions add kuma-admin-password --data-file=- --project=deepcab-dev
 ```
+
+### A.7. Pre-seed Uptime Kuma monitors (Wave 4)
+
+The status page (`deepcab-status` Cloud Run service, running
+`louislam/uptime-kuma:1`) boots with a blank UI on first deploy. Seed it
+from `cloud-manifests/kuma/monitors.yaml`:
+
+```bash
+cd 002-deepCab-platform
+
+# Point KUMA_BASE_URL at the status service URL terraform just emitted
+export KUMA_BASE_URL=$(uv run deepcab-platform tf output --env dev | grep status_page_url | awk -F\" '{print $2}')
+export KUMA_ADMIN_PASSWORD=$(gcloud secrets versions access latest --secret=kuma-admin-password --project=deepcab-dev)
+
+uv run deepcab-platform kuma seed         # or: make kuma_seed
+```
+
+What it does:
+
+1. POST `/api/setup` to create the admin user (no-op if it exists).
+2. POST `/api/login` to grab a JWT.
+3. For each monitor in `cloud-manifests/kuma/monitors.yaml`, POST
+   `/api/monitor`. Existing monitors with the same name are skipped (the
+   seeder is idempotent).
+
+Validate the seed config without hitting the network:
+
+```bash
+uv run deepcab-platform kuma check --base-url $KUMA_BASE_URL
+```
+
+To add a new monitor later, edit `cloud-manifests/kuma/monitors.yaml` and
+re-run `kuma seed` — see [`docs/RUNBOOK.md`](./RUNBOOK.md) §6.
 
 Bootstrap complete. Section A never runs again for this env.
 
@@ -202,8 +250,9 @@ To un-pause for staging/prod, edit `terraform/envs/<env>/main.tf` → set
 | api code | 001-deepCab-api/deepCab/ | tag v* in 001 |
 | api Dockerfile | 001-deepCab-api/infra/docker/Dockerfile | tag v* in 001 |
 | website UI | 003-deepCab-website/src/ | tag v* in 003 |
-| Cloud Run shape (cpu/mem/scale) | 002-deepCab-platform/terraform/modules/cloud_run/ | merge to master in 002 |
+| Cloud Run shape (cpu/mem/scale) | 002-deepCab-platform/terraform/modules/cloud_run_service/ | merge to master in 002 |
 | Per-env knobs | 002-deepCab-platform/terraform/envs/<env>/main.tf | merge to master in 002 |
 | Secret values | `gcloud secrets versions add` | next deploy or `gcloud run services update` |
-| GitHub repo vars/secrets | 002-deepCab-platform/scripts/gh-*.env | `make sync_gh` |
+| GitHub repo vars/secrets | 002-deepCab-platform/scripts/gh-*.env | `deepcab-platform sync-gh` (or `make sync_gh`) |
+| Status-page monitors | 002-deepCab-platform/cloud-manifests/kuma/monitors.yaml | `deepcab-platform kuma seed` |
 | Branching policy | this doc + parent CLAUDE.md "Branching" section | n/a |
