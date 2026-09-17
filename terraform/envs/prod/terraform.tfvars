@@ -1,3 +1,8 @@
+# DEPRECATED 2026-06-06: deepcab-prod project does not exist. The 3-project model
+# (garassino-ml/ai/op) does not include a prod tier for deepCab — it lives in
+# garassino-ml and runs in show-and-destroy mode only (cost cap €25/mo workspace-wide).
+# This file is kept as a reference for what a prod tier looked like; do not apply.
+
 project_id     = "deepcab-prod"
 project_number = "000000000000"
 region         = "us-central1"

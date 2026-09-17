@@ -9,7 +9,6 @@ on:
   push:
     branches:
       - main
-      - main
     paths:
       - "terraform/**"
       - ".github/workflows/platform-apply.yml"
@@ -67,6 +66,18 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: terraform apply -input=false -no-color -auto-approve -lock-timeout=5m
 
+      - name: Telegram notify (success — dev)
+        if: success()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_BOT" ] && exit 0
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=Markdown \
+            -d text="✅ *terraform apply* → *dev* · sha=\`${GITHUB_SHA::7}\`"
+
       - name: Slack notify (success)
         if: success() && env.SLACK_WEBHOOK_URL != ''
         env:
@@ -75,6 +86,18 @@ jobs:
           curl -sS -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\":white_check_mark: deepCab platform applied to *dev* (${GITHUB_SHA::7})\"}" \
             "$SLACK_WEBHOOK_URL"
+
+      - name: Telegram notify (failure — dev)
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_BOT" ] && exit 0
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=Markdown \
+            -d text="❌ *terraform apply* FAILED → *dev* · [run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
 
       - name: Slack notify (failure)
         if: failure() && env.SLACK_WEBHOOK_URL != ''
@@ -120,6 +143,18 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: terraform apply -input=false -no-color -auto-approve -lock-timeout=5m
 
+      - name: Telegram notify (success — staging)
+        if: success()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_BOT" ] && exit 0
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=Markdown \
+            -d text="✅ *terraform apply* → *staging* · sha=\`${GITHUB_SHA::7}\`"
+
       - name: Slack notify (success)
         if: success() && env.SLACK_WEBHOOK_URL != ''
         env:
@@ -128,6 +163,18 @@ jobs:
           curl -sS -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\":white_check_mark: deepCab platform applied to *staging* (${GITHUB_SHA::7})\"}" \
             "$SLACK_WEBHOOK_URL"
+
+      - name: Telegram notify (failure — staging)
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_BOT" ] && exit 0
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=Markdown \
+            -d text="❌ *terraform apply* FAILED → *staging* · [run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
 
       - name: Slack notify (failure)
         if: failure() && env.SLACK_WEBHOOK_URL != ''
@@ -172,6 +219,18 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: terraform apply -input=false -no-color -auto-approve -lock-timeout=5m
 
+      - name: Telegram notify (success — prod)
+        if: success()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_BOT" ] && exit 0
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=Markdown \
+            -d text="🚀 *terraform apply* → *PROD* · sha=\`${GITHUB_SHA::7}\`"
+
       - name: Slack notify (success)
         if: success() && env.SLACK_WEBHOOK_URL != ''
         env:
@@ -180,6 +239,18 @@ jobs:
           curl -sS -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\":rocket: deepCab platform applied to *prod* (${GITHUB_SHA::7})\"}" \
             "$SLACK_WEBHOOK_URL"
+
+      - name: Telegram notify (failure — prod)
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_BOT" ] && exit 0
+          curl -s -X POST "https://api.telegram.org/bot$TG_BOT/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=Markdown \
+            -d text="🚨 *terraform apply* FAILED → *PROD* · [run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
 
       - name: Slack notify (failure)
         if: failure() && env.SLACK_WEBHOOK_URL != ''

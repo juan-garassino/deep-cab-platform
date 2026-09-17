@@ -1,5 +1,7 @@
 # Workload Identity Federation bootstrap
 
+> **Pre-migration doc (2026-06-07):** WIF for the deepCab cluster is now provisioned in **`garassino-op`** under the `gh-actions` pool, with deployer SA `gh-deployer@garassino-ml.iam.gserviceaccount.com`. The bootstrap steps below describe the original per-project WIF design — kept as historical narrative. See workspace root `CLAUDE.md` § "GCP architecture".
+
 One-time setup so GitHub Actions can deploy to GCP **without long-lived JSON keys**.
 
 ## Prerequisites

@@ -1,5 +1,7 @@
 # Cost estimates
 
+> **Pre-migration doc (2026-06-07):** GCP project `deepcab-dev` cold-deleted; numbers below describe the original three-env design. Current reality: only `dev` runs (in `garassino-ml` / `europe-west1`) under the **€25/mo workspace cap**, in show-and-destroy mode — true idle cost is ≈ €0/mo, demo runs incur Cloud Run / Cloud SQL for the duration of `make showcase_up`.
+
 Back-of-napkin monthly cost per env. Real cost depends on traffic, idle time, and
 how aggressive the retrain schedule is. Numbers below assume `us-central1`,
 moderate dev usage (a few hundred predictions per day), and a single nightly

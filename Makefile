@@ -2,10 +2,16 @@
 #
 # Env-scoped wrappers around Terraform. Default env is `dev`.
 #
-#   make ENV=staging plan
-#   make ENV=prod apply
-#   make fmt
-#   make validate
+# GCP migration note (2026-06-06): retargeted to garassino-ml (europe-west1).
+# State backend is now gs://garassino-op-tf-state/deepcab/. Operates in
+# show-and-destroy mode under the €25/mo workspace cap — see `showcase_up`
+# (~€15/mo while running) + `showcase_down` (~€1/mo idle). The staging/prod
+# envs are deprecated; only `dev` is funded under the cap.
+#
+#   make ENV=dev apply        # provision
+#   make ENV=dev showcase_up  # bring it live for a demo
+#   make ENV=dev showcase_down # quiesce
+#   make ENV=dev destroy      # wipe everything
 
 ENV ?= dev
 TF_DIR := terraform/envs/$(ENV)
@@ -64,41 +70,38 @@ workflows_lint:  ## Sanity-check YAML in .github/workflows/.
 
 lint: fmt_check validate workflows_lint  ## All checks (fmt + validate + workflows).
 
-# --- GCP project bootstrap -------------------------------------------------
+# --- Python CLI entrypoint (Wave 3) ---------------------------------------
+# All targets below now wrap `deepcab-platform` (Typer CLI, Pydantic-typed,
+# DryRun providers). The bash scripts in scripts/ became thin shims for
+# backwards-compat. Direct CLI access: `uv run deepcab-platform <subcmd>`.
 
-bootstrap_gcp:  ## One-shot: create GCP project + link billing + state bucket + WIF SA. Needs BILLING_ACCOUNT env.
-	./scripts/bootstrap-gcp.sh
+cli:  ## Open the deepcab-platform help.
+	uv run deepcab-platform --help
 
-# --- GitHub secrets / variables --------------------------------------------
+status:  ## Print resolved DEEPCAB_ENV settings.
+	uv run deepcab-platform status
+
+bootstrap_gcp:  ## One-shot: create GCP project + link billing + state bucket + WIF SA.
+	@if [ -z "$$BILLING_ACCOUNT" ] || [ -z "$$PROJECT_ID" ]; then \
+		echo "Required: BILLING_ACCOUNT=XXXXXX-XXXXXX-XXXXXX PROJECT_ID=deepcab-<env> make bootstrap_gcp ENV=<env>"; \
+		exit 1; \
+	fi
+	uv run deepcab-platform bootstrap --env $(ENV) --billing-account $$BILLING_ACCOUNT --project-id $$PROJECT_ID
 
 sync_gh:  ## Upload gh-vars + gh-secrets dotenv files to all 3 deepCab repos.
-	./scripts/sync-gh-secrets.sh
+	uv run deepcab-platform sync-gh
 
-# --- Showcase up/down toggle -----------------------------------------------
-# `showcase_up`  : flip Cloud SQL ALWAYS + Uptime Kuma min=1 (~$15/mo).
-# `showcase_down`: flip Cloud SQL NEVER  + Uptime Kuma min=0 (~$0/mo idle).
-# Apply targets the dev env. Pass ENV=staging / prod to scope elsewhere.
+mlflow_mirror:  ## Mirror ghcr.io/mlflow/mlflow → GAR via Cloud Build.
+	uv run deepcab-platform mlflow mirror --project-id $$(cd $(TF_DIR) && terraform output -raw project_id)
 
-showcase_up:  ## Bring the showcase stack live (~$15/mo until showcase_down).
-	@cd $(TF_DIR) && terraform apply -input=false -auto-approve -var='showcase_mode=true'
-	@echo
-	@echo "Live URLs:"
-	@cd $(TF_DIR) && terraform output -raw api_service_url   2>/dev/null && echo "  ← api"
-	@cd $(TF_DIR) && terraform output -raw website_service_url 2>/dev/null && echo "  ← website"
-	@cd $(TF_DIR) && terraform output -raw mlflow_service_url 2>/dev/null && echo "  ← mlflow"
-	@cd $(TF_DIR) && terraform output -raw status_page_url    2>/dev/null && echo "  ← status page (Uptime Kuma)"
+showcase_up:  ## Bring the showcase stack live (Cloud SQL ALWAYS, Kuma min=1, ~$15/mo).
+	uv run deepcab-platform showcase up --env $(ENV)
 
-showcase_down:  ## Stop Cloud SQL + scale Uptime Kuma to zero. Idle cost ~$0.
-	@cd $(TF_DIR) && terraform apply -input=false -auto-approve -var='showcase_mode=false'
-	@echo
-	@echo "Stack down. Cloud SQL stopped, Uptime Kuma min=0."
-	@echo "Cloud Run services exist but scale to zero — no compute billed."
-	@echo "Bring back with: make showcase_up"
+showcase_down:  ## Stop Cloud SQL + Kuma min=0 (~$1/mo idle).
+	uv run deepcab-platform showcase down --env $(ENV)
 
-# --- MLflow image lifecycle ------------------------------------------------
-
-mlflow_mirror:  ## Mirror ghcr.io/mlflow/mlflow → GAR via Cloud Build. Re-run after bumping the version in cloud-manifests/mlflow/mirror.yaml.
-	gcloud builds submit --config=cloud-manifests/mlflow/mirror.yaml --no-source --project=$$(cd $(TF_DIR) && terraform output -raw project_id)
+kuma_seed:  ## Pre-configure Uptime Kuma monitors via REST API.
+	uv run deepcab-platform kuma seed
 
 # --- Housekeeping ----------------------------------------------------------
 

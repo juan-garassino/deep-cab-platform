@@ -91,17 +91,78 @@ buckets. That work is all in Terraform here in 002.
 ## Bootstrap dependency graph (one-time per env)
 
 ```
-manual: create gs://deepcab-tfstate-${env}   (chicken-and-egg)
+deepcab-platform bootstrap --env <env>       (creates project + billing + state bucket + WIF + terraform SA)
     ↓
-terraform init -backend=gcs
+deepcab-platform sync-gh                      (uploads GitHub Actions vars + secrets)
     ↓
-terraform apply  (provisions: wif → gar → storage → secrets → vpc → cloud_sql → cloud_run + cloud_run_website + cloud_run_job → scheduler)
+deepcab-platform tf apply --env <env>         (auto-init; provisions:
+                                                wif → gar → storage → secret_manager →
+                                                vpc → cloud_sql →
+                                                cloud_run_service ×4 (api, website, mlflow, status) →
+                                                cloud_run_job → scheduler)
     ↓
 manual: populate secrets via `gcloud secrets versions add …`
     ↓
+deepcab-platform kuma seed                    (Wave 4 — pre-populates the status page from monitors.yaml)
+    ↓
 manual: push first v0.1.0 tag in 001 → api image lands in GAR; push first v0.1.0 tag in 003 → website image lands in GAR
     ↓
-terraform apply (Cloud Run services pick up real images; idempotent re-run)
+deepcab-platform tf apply --env <env>         (Cloud Run services pick up real images; idempotent re-run)
     ↓
-manual: hit Cloud Run URLs (api + website) → done
+manual: hit Cloud Run URLs (api + website + mlflow + status) → done
 ```
+
+## The `deepcab-platform` CLI layer
+
+Wave 3 introduced a Python CLI that wraps every step of the bootstrap +
+day-2 ops flow. Same three-layer pattern as 001's `api/services/` +
+`api/providers.py`:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  deepcab_platform/cli/         Typer surface; --dry-run flag   │
+│   bootstrap.py  sync_gh.py  mlflow.py  showcase.py             │
+│   kuma.py       tf.py        status.py                         │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │
+                               ▼  (DI via deepcab_platform/deps.py)
+┌────────────────────────────────────────────────────────────────┐
+│  deepcab_platform/services/   @dataclass services; no I/O      │
+│   BootstrapService    SyncGhService    MlflowMirrorService     │
+│   ShowcaseService     KumaSeedService  TerraformService        │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │
+                               ▼
+┌────────────────────────────────────────────────────────────────┐
+│  deepcab_platform/providers/  Protocol + Real + DryRun impls   │
+│   GcloudProvider  GhProvider  TerraformProvider  HttpProvider  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+- Every subcommand is env-aware via `DEEPCAB_ENV` (or legacy `APP_ENV`),
+  read by `deepcab_platform/schemas/settings.py` (pydantic-settings).
+- `ProviderMode.DRY_RUN` swaps every Real impl for its DryRun counterpart
+  in one go — tests and `--dry-run` use the same machinery.
+- Pydantic-typed inputs/outputs (`BootstrapInputs`, `BootstrapResult`,
+  `KumaSeedConfig`, `GhSyncResult`) catch malformed configs before any
+  external call.
+
+See [`docs/CLI.md`](./CLI.md) for the per-subcommand reference.
+
+## Terraform module consolidation (Waves 1–2)
+
+The module tree was simplified twice during the polish pass:
+
+- **Wave 2 / S1**: the four specialized Cloud Run modules
+  (`cloud_run`, `cloud_run_website`, `cloud_run_mlflow`, `cloud_run_status`)
+  were collapsed into a single generic `terraform/modules/cloud_run_service/`,
+  instantiated once per workload (api / website / mlflow / status). Same
+  `lifecycle.ignore_changes = [template[0].containers[0].image]` contract
+  applies to all four.
+- **Wave 2 / S3**: the `{env, managed, component}` label block that every
+  module used to inline is now a shared `terraform/modules/_labels/` —
+  consumed by `storage`, `secret_manager`, and (going forward) every new
+  module.
+
+Net module count: 12 (v1) → 15 (after mlflow + status + website) → **13**
+(after consolidation; `_labels` added but 4 cloud_run flavours collapsed).

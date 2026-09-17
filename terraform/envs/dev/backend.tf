@@ -1,11 +1,12 @@
 terraform {
   required_version = ">= 1.5.0"
 
-  # Backend bucket must exist before `terraform init` — bootstrap docs in
-  # ../../../docs/RUNBOOK.md walk through creating it once per environment.
+  # Migrated 2026-06-06: state now lives in the shared garassino-op control plane.
+  # Create the bucket once: gsutil mb -p garassino-op -l europe-west1 -b on
+  # gs://garassino-op-tf-state/ (versioning enabled).
   backend "gcs" {
-    bucket = "deepcab-tfstate-dev"
-    prefix = "envs/dev"
+    bucket = "garassino-op-tf-state"
+    prefix = "deepcab/envs/dev"
   }
 
   required_providers {

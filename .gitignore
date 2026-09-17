@@ -28,3 +28,7 @@ scripts/gh-vars.api.env
 scripts/gh-vars.website.env
 scripts/gh-vars.platform.env
 scripts/gh-secrets.env
+
+# Python
+__pycache__/
+*.pyc

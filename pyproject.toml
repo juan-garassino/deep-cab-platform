@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deepcab-platform"
+version = "0.1.0"
+description = "deepCab platform CLI — bootstrap GCP, sync GitHub secrets, mirror images, drive showcase toggle, seed Uptime Kuma. Mirrors the 001 deepCab CLI architecture."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Juan Garassino", email = "juan.garassino@gmail.com" }]
+requires-python = ">=3.10"
+
+dependencies = [
+    "typer>=0.12",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "rich>=13",
+    "requests>=2.31",
+    "pyyaml>=6",
+    "uptime-kuma-api>=1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+deepcab-platform = "deepcab_platform.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deepcab_platform"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--color=yes -W ignore::DeprecationWarning"

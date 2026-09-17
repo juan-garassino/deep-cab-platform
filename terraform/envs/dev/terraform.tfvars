@@ -1,22 +1,25 @@
 # dev environment values.
 #
-# Replace `project_id` + `project_number` with your real dev project before
-# `terraform plan`. `gcloud projects describe <project> --format='value(projectNumber)'`
-# prints the number.
+# Migrated 2026-06-07 from deepcab-dev → garassino-ml (region us-central1 → europe-west1).
+# Operates in show-and-destroy mode: `make show` to provision, `make destroy` after demos.
+# project_number must be the garassino-ml project number — fetch with:
+#   gcloud projects describe garassino-ml --format='value(projectNumber)'
 
-project_id     = "deepcab-dev"
-project_number = "929003378637"
-region         = "us-central1"
+project_id     = "garassino-ml"
+project_number = "920423386248"
+region         = "europe-west1"
 
 gh_owner         = "juan-garassino"
 gh_api_repo      = "deepCab"
 gh_platform_repo = "deepCab-platform"
 
-# Bootstrap images. On first apply Cloud Run needs *some* image to start with;
-# the hello-world container ships from Google's public registry. Once 001's
-# image-build workflow pushes the real image, `gcloud run services update --image=...`
-# swaps it in and `lifecycle.ignore_changes` keeps TF from reverting.
+# Real images live permanently on GHCR (public). Hello-world is the bootstrap
+# placeholder Cloud Run needs to first stand up before the image-build workflow
+# pushes the real container. `lifecycle.ignore_changes` keeps TF from reverting.
 api_image     = "us-docker.pkg.dev/cloudrun/container/hello"
 retrain_image = "us-docker.pkg.dev/cloudrun/container/hello"
+# Production tags pushed by CI:
+#   ghcr.io/juan-garassino/deepcab-api:<sha>
+#   ghcr.io/juan-garassino/deepcab-retrain:<sha>
 
 mlflow_tracking_uri = "http://mlflow.dev.deepcab.local:5000"

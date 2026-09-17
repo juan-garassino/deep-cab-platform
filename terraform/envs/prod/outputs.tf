@@ -35,7 +35,7 @@ output "runtime_sa_email" {
 }
 
 output "api_service_url" {
-  value = module.cloud_run.service_url
+  value = module.cloud_run_api.service_url
 }
 
 output "retrain_job_name" {
