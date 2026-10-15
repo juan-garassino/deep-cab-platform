@@ -27,13 +27,15 @@ class TrainOnVmInputs(BaseModel):
     env: PlatformEnv = PlatformEnv.DEV
     backend: BackendKind = BackendKind.TORCH_MLP
     data: DataSize = DataSize.S100K
-    machine_type: str = "n1-standard-4"
-    zone: str = "europe-west1-b"
+    # Patterns below keep these values shell-safe: image_tag is rendered into the
+    # root bash startup script on the VM; the rest go straight to gcloud argv.
+    machine_type: str = Field(default="n1-standard-4", pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
+    zone: str = Field(default="europe-west1-b", pattern=r"^[a-z]+-[a-z]+[0-9]+-[a-z]$")
     gpu: GpuType = GpuType.T4
     spot: bool = True
-    max_runtime: str = "6h"  # GCP `--max-run-duration` value
+    max_runtime: str = Field(default="6h", pattern=r"^([0-9]+[dhms])+$")  # GCP `--max-run-duration`
     auto_delete: bool = True
-    image_tag: str = "v1.0"
+    image_tag: str = Field(default="v1.0", pattern=r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
     tail: bool = False  # stream serial console after create
     # Extra env vars rendered as `-e KEY=value` on the in-VM `docker run`.
     # Used by the simulation flow's VmTrainExecutor to pass the chunk's BQ

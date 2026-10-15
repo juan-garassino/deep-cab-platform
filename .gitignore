@@ -32,3 +32,10 @@ scripts/gh-secrets.env
 # Python
 __pycache__/
 *.pyc
+
+# Local env files (settings load `.env.<DEEPCAB_ENV>`) — never commit
+.env
+.env.*
+!.env.example
+.venv/
+.coverage
