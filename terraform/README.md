@@ -51,8 +51,9 @@ override lands last, so it wins.
 | `gke` | GKE Standard cluster + node pool | gated (`enabled = false` default) |
 | `dns` | Managed zone records | gated (empty `zone_name` disables) |
 | `iam` | Cross-cutting bindings + billing budget | always-on (mostly no-ops without inputs) |
+| `bigquery` | BigQuery dataset + raw taxi-trip table for the simulation loop; data is loaded by `deepcab-platform data clone-bq` | instantiated in `envs/dev/main.tf` |
 
-Total: **13 modules** (12 resource-bearing + 1 `_labels` helper). All four
+Total: **14 modules** (13 resource-bearing + 1 `_labels` helper). All four
 former `cloud_run_*` flavours now share the single `cloud_run_service`
 module, each declared once per env in `envs/<env>/main.tf`.
 
