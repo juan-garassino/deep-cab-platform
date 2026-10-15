@@ -19,6 +19,7 @@ from deepcab_platform.schemas.gh import GhSyncResult
 
 @dataclass
 class SyncGhService:
+    """Uploads GitHub Actions variables and secrets from dotenv files in `scripts_dir` to the deepCab repos."""
     gh: GhProvider
     scripts_dir: Path = field(default_factory=lambda: Path("scripts"))
 
@@ -29,6 +30,7 @@ class SyncGhService:
     }
 
     def sync(self, repos: list[str] | None = None) -> GhSyncResult:
+        """Set shared and per-repo variables, and shared secrets, on each repo; secrets are skipped when every value is empty."""
         repos = repos or list(self.REPO_VARS_FILE)
         shared_vars = self.scripts_dir / "gh-vars.env"
         shared_secrets = self.scripts_dir / "gh-secrets.env"

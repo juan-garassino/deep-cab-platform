@@ -176,6 +176,36 @@ Source: `deepcab_platform/cli/train.py` → `services/train.py` →
 
 ---
 
+### `data clone-bq`
+
+Cross-region copy of a public NYC TLC table into the EU dataset, in three
+steps (extract in US, `gsutil cp`, `bq load`). Re-runs skip steps whose
+outputs already exist. Defaults come from `schemas/data.py`.
+
+```bash
+uv run deepcab-platform data clone-bq --year 2014 --dry-run
+```
+
+Source: `deepcab_platform/cli/data.py` → `services/data.py`.
+
+---
+
+### `simulate run`
+
+Walks a BigQuery time window in chunks and shells out to the 001 repo's
+`python -m deepCab.flow_v2.simulate`, then prints a per-chunk table.
+`--executor local|vm`, `--max-chunks`, `--api-dir` (default
+`../001-deepCab-api`) and `--dry-run` are the main knobs.
+
+```bash
+uv run deepcab-platform simulate run \
+  --time-window-start 2014-01-01 --time-window-end 2014-02-01 --dry-run
+```
+
+Source: `deepcab_platform/cli/simulate.py` → `services/simulate.py`.
+
+---
+
 ### `kuma seed` / `kuma check`
 
 `kuma seed` — Pre-populate the Uptime Kuma status page from
@@ -314,9 +344,9 @@ Module map:
 
 | Path | Purpose |
 |---|---|
-| `deepcab_platform/cli/` | 7 Typer files — `bootstrap`, `sync_gh`, `mlflow`, `showcase`, `kuma`, `tf`, `status` |
-| `deepcab_platform/services/` | 6 dataclasses — one per concern, dependency-injected |
-| `deepcab_platform/providers/` | 4 Protocols — `GcloudProvider`, `GhProvider`, `TerraformProvider`, `HttpProvider` (each with Real + DryRun) |
+| `deepcab_platform/cli/` | 11 Typer files — `bootstrap`, `sync_gh`, `status`, `train`, `mlflow`, `showcase`, `kuma`, `tf`, `secrets`, `data`, `simulate` |
+| `deepcab_platform/services/` | 11 modules, one dataclass service per concern (`SimulateService` takes a runner instead of a provider), dependency-injected |
+| `deepcab_platform/providers/` | 5 Protocols — `GcloudProvider`, `GhProvider`, `TerraformProvider`, `HttpProvider`, `KumaApiProvider` (each with Real + DryRun) |
 | `deepcab_platform/schemas/` | Pydantic + str-Enums — `BootstrapInputs/Result`, `KumaSeedConfig`, `GhSyncResult`, `PlatformSettings`, `PlatformEnv/ShowcaseMode/TerraformAction/...` |
 | `deepcab_platform/deps.py` | DI wiring: `get_<service>_service(mode)` factory functions |
 | `deepcab_platform/__main__.py` | Re-export so `python -m deepcab_platform` works |

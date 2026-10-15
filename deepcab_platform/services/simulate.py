@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Protocol, runtime_checkable
@@ -42,6 +41,7 @@ class SubprocessSimulateRunner:
     """
 
     def invoke(self, inputs: SimulateRunInputs, *, api_dir: str) -> dict:
+        """Run the 001-side simulate entrypoint in `api_dir` and return its parsed JSON payload."""
         cmd = [
             "uv", "run", "python", "-m", "deepCab.flow_v2.simulate",
             "--backend", inputs.backend.value,
@@ -71,6 +71,7 @@ class DryRunSimulateRunner:
     """Prints what would run, returns a single-chunk synthetic result."""
 
     def invoke(self, inputs: SimulateRunInputs, *, api_dir: str) -> dict:
+        """Print the planned run and return a synthetic payload with one entry per chunk."""
         n_chunks = max(
             1,
             (inputs.time_window_end - inputs.time_window_start)
@@ -104,9 +105,11 @@ class DryRunSimulateRunner:
 
 @dataclass
 class SimulateService:
+    """Runs a simulation through a `SimulateRunner` and validates the payload into a `SimulateRunResult`."""
     runner: SimulateRunner
 
     def run(self, inputs: SimulateRunInputs, *, api_dir: str) -> SimulateRunResult:
+        """Invoke the runner and convert its JSON payload into a `SimulateRunResult`."""
         payload = self.runner.invoke(inputs, api_dir=api_dir)
         return SimulateRunResult(
             backend=inputs.backend,

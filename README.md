@@ -2,8 +2,8 @@
 
 > **GCP migration note (2026-06-07):** Live GCP project `deepcab-dev` was cold-deleted. This stack now targets **`garassino-ml`** (region **`europe-west1`**) in show-and-destroy mode under the €25/mo workspace cost cap. Terraform state moved to `gs://garassino-op-tf-state/deepcab/`. The `dev` env is the only funded tier; `staging` / `prod` env directories are marked DEPRECATED and kept as reference. Refs to `deepcab-dev` / `us-central1` elsewhere in this README and `docs/` describe **pre-migration state** — canonical config in workspace root `CLAUDE.md` § "GCP architecture".
 
-GCP infrastructure-as-code for the deepCab learning project. Real Terraform, real CI,
-multi-env (dev / staging / prod). Sibling repo to [`deepCab`](https://github.com/juan-garassino/deepCab)
+GCP infrastructure-as-code and a Python CLI for the deepCab learning project. Terraform modules,
+GitHub Actions plan/apply workflows, and three env directories (dev / staging / prod). Sibling repo to [`deepCab`](https://github.com/juan-garassino/deepCab)
 (the API). The split:
 
 | Repo | Owns |
@@ -24,14 +24,14 @@ Platform content lives under `terraform/`, `cloud-manifests/`, `docs/`, `.github
 ├── index.html, CNAME, images/, script.js, style.css   # GitHub Pages landing
 │
 ├── deepcab_platform/           # Python CLI (Wave 3) — mirrors 001's deepCab/{cli,services,providers,schemas}
-│   ├── cli/                    #   8 Typer subcommands (bootstrap, sync-gh, mlflow, showcase, kuma, secrets, tf, status)
-│   ├── services/               #   7 @dataclass services with provider DI
+│   ├── cli/                    #   11 Typer subcommands (bootstrap, sync-gh, status, train-on-vm, mlflow, showcase, kuma, tf, secrets, data, simulate)
+│   ├── services/               #   11 @dataclass services with provider DI
 │   ├── providers/              #   5 Protocols × {Real, DryRun} impls (gcloud, gh, terraform, http, kuma) + shared _subprocess helper
 │   ├── schemas/                #   Pydantic models + str-Enums + pydantic-settings
 │   └── deps.py                 #   wires providers → services → cli
 │
 ├── terraform/                  # Layered Terraform (modules + per-env composition)
-│   ├── modules/                #   13 reusable modules (Wave 2: 4 cloud_run_* → cloud_run_service, _labels extracted)
+│   ├── modules/                #   14 reusable modules (Wave 2: 4 cloud_run_* → cloud_run_service, _labels extracted)
 │   ├── envs/{dev,staging,prod} #   per-env wiring + tfvars
 │   └── README.md
 │
@@ -65,18 +65,21 @@ Platform content lives under `terraform/`, `cloud-manifests/`, `docs/`, `.github
 
 ## 5-minute quickstart
 
-Prerequisites: `terraform`, `gcloud`, `gh`, `uv` installed; you own a GCP project and a billing account.
+Prerequisites: `uv` for the CLI and tests; `terraform`, `gcloud`, `gh` for anything beyond `--dry-run`;
+for steps 3 onward, a GCP project and a billing account.
 
 ```bash
 # 1. Clone the repo + install the CLI
-git clone https://github.com/juan-garassino/deepCab-platform.git
-cd deepCab-platform
+git clone https://github.com/juan-garassino/deep-cab-platform.git
+cd deep-cab-platform
 uv sync --extra dev                                     # installs deepcab-platform Typer CLI
 
 # 2. Local sanity (no GCP access needed)
-make fmt                                                # terraform fmt -recursive
-make validate                                           # init -backend=false + validate, per env
+uv run pytest -q                                        # unit tests
 uv run deepcab-platform --help                          # see all subcommands
+uv run deepcab-platform tf plan --env dev --dry-run     # prints the terraform command, runs nothing
+make fmt                                                # terraform fmt -recursive (needs terraform)
+make validate                                           # init -backend=false + validate, per env (needs terraform)
 
 # 3. Bootstrap your first env (full walkthrough in docs/DEPLOY-FROM-SCRATCH.md)
 uv run deepcab-platform bootstrap \
@@ -117,7 +120,7 @@ curl -fsS ${URL}/readyz
 envs/dev/main.tf   ──┐
 envs/staging/.../   ─┼──>   modules/{_labels, gar, storage, wif, secret_manager, cloud_sql,
 envs/prod/.../     ──┘                vpc, cloud_run_service, cloud_run_job,
-                                      scheduler, gke, dns, iam}
+                                      scheduler, gke, dns, iam, bigquery}
 ```
 
 `cloud_run_service` (Wave 2 consolidation) is instantiated once per workload
@@ -175,6 +178,16 @@ so TF owns the spec and 001 owns the image, with no fight.
 | `platform-apply.yml` | push to `main` touching `terraform/**` (or manual) | Sequential apply dev → staging → prod with `environment:` approval gates + Slack notify |
 
 Both auth via Workload Identity Federation (zero JSON keys).
+
+## Tests and lint
+
+```bash
+uv run pytest -q          # tests/services: cleanup and train-on-vm extra-env
+uv run ruff check .       # lint config lives in pyproject.toml [tool.ruff]
+make workflows_lint       # YAML sanity check for .github/workflows/
+```
+
+The tests exercise services with `DryRun` providers; none of them call GCP.
 
 ## Local development
 

@@ -14,10 +14,12 @@ from deepcab_platform.providers.gcloud import GcloudProvider
 
 @dataclass
 class MlflowMirrorService:
+    """Mirrors the MLflow image into Artifact Registry via Cloud Build."""
     gcloud: GcloudProvider
     config_path: str = "cloud-manifests/mlflow/mirror.yaml"
 
     def mirror(self, project_id: str) -> str:
+        """Submit the Cloud Build config at `config_path` for `project_id`; return gcloud stdout."""
         return self.gcloud.run([
             "builds", "submit",
             f"--config={self.config_path}",

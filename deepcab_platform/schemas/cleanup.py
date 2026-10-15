@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 
 class CleanupLegacyResult(BaseModel):
+    """Outcome of one `cleanup-legacy` run: what was removed and whether the follow-up plan is clean."""
     model_config = {"extra": "forbid"}
 
     state_addresses_removed: list[str]

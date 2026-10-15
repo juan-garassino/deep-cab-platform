@@ -21,9 +21,11 @@ class TerraformProvider(Protocol):
 
 @dataclass
 class RealTerraformProvider:
+    """Shells out to `terraform` inside `workdir`, with `TF_IN_AUTOMATION=1` and `TF_INPUT=0` defaulted."""
     binary: str = "terraform"
 
     def run(self, args: list[str], *, workdir: str, check: bool = True) -> str:
+        """Run `terraform <args>` in `workdir` and return stdout."""
         if shutil.which(self.binary) is None:
             raise RuntimeError(f"`{self.binary}` not found on PATH")
         env = os.environ.copy()
@@ -34,7 +36,9 @@ class RealTerraformProvider:
 
 @dataclass
 class DryRunTerraformProvider:
+    """Prints the terraform command instead of executing it. Always returns an empty string."""
     def run(self, args: list[str], *, workdir: str, check: bool = True) -> str:
+        """Print the terraform command and return an empty string."""
         rprint(
             f"[dim]\\[dry-run terraform][/dim] [cyan](cd {workdir} && terraform "
             f"{' '.join(args)})[/cyan]"
