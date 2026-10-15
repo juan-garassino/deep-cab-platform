@@ -27,10 +27,12 @@ from deepcab_platform.schemas.data import DataCloneBqInputs, DataCloneBqResult
 
 @dataclass
 class DataCloneBqService:
+    """Copies a US-hosted BigQuery table slice into the EU dataset via GCS staging buckets."""
     gcloud: GcloudProvider
     sql_template_path: Path = Path("cloud-manifests/bq/yellow_trips_raw.export.sql")
 
     def clone(self, inputs: DataCloneBqInputs) -> DataCloneBqResult:
+        """Ensure staging buckets, then extract, copy and load, skipping steps whose output already exists."""
         qualified = f"{inputs.target_project}.{inputs.target_dataset}.{inputs.target_table}"
 
         # Step 0: ensure staging buckets exist.

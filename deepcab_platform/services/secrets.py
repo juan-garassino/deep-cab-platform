@@ -29,6 +29,7 @@ def _default_consumers() -> dict[str, list[str]]:
 
 @dataclass
 class SecretsService:
+    """Rotates Secret Manager secrets and bumps the Cloud Run services that consume them."""
     gcloud: GcloudProvider
     secret_consumers: dict[str, list[str]] = field(default_factory=_default_consumers)
 
@@ -41,6 +42,7 @@ class SecretsService:
         region: str = "europe-west1",
         services: list[str] | None = None,
     ) -> dict:
+        """Add `value` as a new version of `secret_id`, then update each consuming Cloud Run service to `:latest`. Returns the secret id, new version and services bumped."""
         new_version = self._add_version(secret_id, value, project_id)
         targets = services if services is not None else self.secret_consumers.get(secret_id, [])
         for service in targets:

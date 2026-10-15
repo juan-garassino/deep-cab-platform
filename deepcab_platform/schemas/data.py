@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class DataCloneBqInputs(BaseModel):
+    """Validated inputs for the cross-region BigQuery clone (source, target, year, staging buckets)."""
     model_config = {"extra": "forbid"}
 
     source_table: str = Field(
@@ -42,6 +43,7 @@ class DataCloneBqInputs(BaseModel):
 
 
 class DataCloneBqResult(BaseModel):
+    """Outcome of a clone: target table, location, row count if known, and which steps were skipped."""
     model_config = {"extra": "forbid"}
 
     qualified_table: str

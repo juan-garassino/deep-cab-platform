@@ -29,10 +29,12 @@ from deepcab_platform.schemas.kuma import KumaMonitor, KumaSeedConfig, KumaSeedR
 
 @dataclass
 class KumaSeedService:
+    """Seeds Uptime Kuma monitors from a YAML config."""
     kuma: KumaApiProvider
     config_path: Path = Path("cloud-manifests/kuma/monitors.yaml")
 
     def load_config(self) -> KumaSeedConfig:
+        """Parse and validate `config_path` as a `KumaSeedConfig`."""
         raw = yaml.safe_load(self.config_path.read_text())
         return KumaSeedConfig.model_validate(raw)
 
@@ -43,6 +45,11 @@ class KumaSeedService:
         *,
         config: KumaSeedConfig | None = None,
     ) -> KumaSeedResult:
+        """Connect to `base_url`, run first-time setup if needed, log in, and add monitors.
+
+        Monitors whose name already exists, or whose creation fails, are reported
+        as skipped. The connection is always closed.
+        """
         cfg = config or self.load_config()
         base = base_url.rstrip("/")
         self.kuma.connect(base)

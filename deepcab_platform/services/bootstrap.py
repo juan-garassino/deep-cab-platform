@@ -46,6 +46,7 @@ class BootstrapService:
     )
 
     def bootstrap(self, inputs: BootstrapInputs) -> BootstrapResult:
+        """Create the project, link billing, enable APIs, create the state bucket and set up WIF and the Terraform SA; return a `BootstrapResult`."""
         self._ensure_project(inputs.project_id, inputs.env.value)
         project_number = self._project_number(inputs.project_id)
         self._link_billing(inputs.project_id, inputs.billing_account)

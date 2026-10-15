@@ -39,6 +39,7 @@ HOURLY_COST_USD = {
 
 @dataclass
 class TrainOnVmService:
+    """Launches a one-shot GCE training VM from the startup-script template."""
     gcloud: GcloudProvider
     template_path: Path = Path("cloud-manifests/train/startup.sh.tmpl")
 
@@ -52,6 +53,7 @@ class TrainOnVmService:
         telegram_bot_token: str = "",
         telegram_chat_id: str = "",
     ) -> TrainOnVmResult:
+        """Render the startup script, create the VM with gcloud, and return its name, console URLs and settings."""
         instance_name = self._instance_name(inputs)
         image_uri = (
             f"europe-west1-docker.pkg.dev/{project_id}/deepcab/api:{inputs.image_tag}"

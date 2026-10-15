@@ -27,6 +27,7 @@ class RealGcloudProvider:
     extra_env: dict[str, str] | None = None
 
     def run(self, args: list[str], *, check: bool = True) -> str:
+        """Run `gcloud <args>` and return stdout; raise `RuntimeError` if the binary is missing."""
         if shutil.which(self.binary) is None:
             raise RuntimeError(f"`{self.binary}` not found on PATH")
         env = os.environ.copy()
@@ -42,5 +43,6 @@ class DryRunGcloudProvider:
     """Prints the command instead of executing. Always returns empty string."""
 
     def run(self, args: list[str], *, check: bool = True) -> str:
+        """Print the gcloud command and return an empty string."""
         rprint(f"[dim]\\[dry-run gcloud][/dim] [cyan]gcloud {' '.join(args)}[/cyan]")
         return ""

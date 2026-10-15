@@ -19,14 +19,17 @@ class HttpProvider(Protocol):
 
 @dataclass
 class RealHttpProvider:
+    """HTTP via `requests`; raises on non-2xx and returns parsed JSON (or `{}` for an empty body)."""
     timeout_seconds: float = 15.0
 
     def post(self, url: str, *, json: dict | None = None, headers: dict | None = None) -> Any:
+        """POST `json` to `url` and return the parsed JSON response."""
         response = requests.post(url, json=json, headers=headers, timeout=self.timeout_seconds)
         response.raise_for_status()
         return response.json() if response.content else {}
 
     def get(self, url: str, *, headers: dict | None = None) -> Any:
+        """GET `url` and return the parsed JSON response."""
         response = requests.get(url, headers=headers, timeout=self.timeout_seconds)
         response.raise_for_status()
         return response.json() if response.content else {}
@@ -40,11 +43,13 @@ class DryRunHttpProvider:
     gets: list[dict] = field(default_factory=list)
 
     def post(self, url: str, *, json: dict | None = None, headers: dict | None = None) -> Any:
+        """Record the POST in `self.posts` and return `{}`."""
         rprint(f"[dim]\\[dry-run POST][/dim] [cyan]{url}[/cyan] body={json}")
         self.posts.append({"url": url, "json": json, "headers": headers})
         return {}
 
     def get(self, url: str, *, headers: dict | None = None) -> Any:
+        """Record the GET in `self.gets` and return `{}`."""
         rprint(f"[dim]\\[dry-run GET][/dim] [cyan]{url}[/cyan]")
         self.gets.append({"url": url, "headers": headers})
         return {}

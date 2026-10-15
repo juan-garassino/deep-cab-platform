@@ -39,11 +39,13 @@ _LEGACY_SECRET_IDS = ("mlflow-db-password",)
 
 @dataclass
 class CleanupLegacyService:
+    """Removes legacy Cloud SQL / `mlflow-db-password` state and resources for one env (see module docstring)."""
     terraform: TerraformProvider
     gcloud: GcloudProvider
     terraform_envs_dir: str = "terraform/envs"
 
     def cleanup(self, env: PlatformEnv) -> CleanupLegacyResult:
+        """Run the five-step sweep for `env` and return what was removed."""
         workdir = f"{self.terraform_envs_dir}/{env.value}"
 
         # 1+2: state list → state rm.
@@ -77,6 +79,7 @@ class CleanupLegacyService:
     # --- pre-flight helper consumed by ShowcaseService ---------------------
 
     def list_legacy_state_addresses(self, env: PlatformEnv) -> list[str]:
+        """Return tfstate addresses for `env` that match the legacy allow-list, without changing anything."""
         return self._legacy_state_addresses(f"{self.terraform_envs_dir}/{env.value}")
 
     # --- internals --------------------------------------------------------

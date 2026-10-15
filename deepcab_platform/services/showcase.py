@@ -28,6 +28,7 @@ class LegacyStateDetected(RuntimeError):
 
 @dataclass
 class ShowcaseService:
+    """Toggles the showcase stack by applying Terraform with `showcase_mode` set to true or false."""
     terraform_service: TerraformService
     gcloud: GcloudProvider | None = None
     cleanup_service: CleanupLegacyService | None = None
@@ -40,6 +41,7 @@ class ShowcaseService:
         *,
         ignore_legacy: bool = False,
     ) -> str:
+        """Apply Terraform with `showcase_mode` for `mode`. On UP, first check for legacy state (unless `ignore_legacy`), then wait for Cloud SQL and warm Kuma."""
         if mode == ShowcaseMode.UP:
             self._check_legacy_state(env, ignore_legacy=ignore_legacy)
 

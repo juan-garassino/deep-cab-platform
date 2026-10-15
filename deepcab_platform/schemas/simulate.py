@@ -16,6 +16,7 @@ from deepcab_platform.schemas.enums import BackendKind, DataSize, PlatformEnv
 
 
 class SimulateRunInputs(BaseModel):
+    """Validated inputs for a simulation run; the time window must be non-empty (`end > start`)."""
     model_config = {"extra": "forbid"}
 
     env: PlatformEnv = PlatformEnv.DEV
@@ -58,6 +59,7 @@ class SimulateRunInputs(BaseModel):
 
 
 class SimulateChunkSummary(BaseModel):
+    """Result of one time-window chunk: challenger metric, promotion decision and reason."""
     chunk_index: int
     train_run_id: str | None
     challenger_metric: float
@@ -67,6 +69,7 @@ class SimulateChunkSummary(BaseModel):
 
 
 class SimulateRunResult(BaseModel):
+    """Aggregate result of a simulation run across all chunks."""
     model_config = {"extra": "forbid"}
 
     backend: BackendKind

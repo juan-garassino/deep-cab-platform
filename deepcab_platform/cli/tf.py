@@ -20,6 +20,7 @@ def _run(action: TerraformAction, env: PlatformEnv, auto_approve: bool, dry_run:
 @tf_app.command("plan")
 def plan(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e"),
          dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    """Run `terraform plan` for the selected env."""
     _run(TerraformAction.PLAN, env, auto_approve=False, dry_run=dry_run)
 
 
@@ -27,6 +28,7 @@ def plan(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e"),
 def apply(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e"),
           auto_approve: bool = typer.Option(False, "--auto-approve", "-y"),
           dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    """Run `terraform apply` for the selected env (prompts unless `--auto-approve`)."""
     _run(TerraformAction.APPLY, env, auto_approve=auto_approve, dry_run=dry_run)
 
 
@@ -34,16 +36,19 @@ def apply(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e"),
 def destroy(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e"),
             auto_approve: bool = typer.Option(False, "--auto-approve", "-y"),
             dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    """Run `terraform destroy` for the selected env (prompts unless `--auto-approve`)."""
     _run(TerraformAction.DESTROY, env, auto_approve=auto_approve, dry_run=dry_run)
 
 
 @tf_app.command("output")
 def output(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e")) -> None:
+    """Print `terraform output` for the selected env."""
     _run(TerraformAction.OUTPUT, env, auto_approve=False, dry_run=False)
 
 
 @tf_app.command("validate")
 def validate(env: PlatformEnv = typer.Option(PlatformEnv.DEV, "--env", "-e")) -> None:
+    """Run `terraform validate` for the selected env."""
     _run(TerraformAction.VALIDATE, env, auto_approve=False, dry_run=False)
 
 
