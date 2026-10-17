@@ -194,7 +194,7 @@ module "cloud_run_mlflow" {
 
   command = ["bash", "-c"]
   args = [
-    "pip install --no-cache-dir psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri \"$${DEEPCAB_NEON_DSN}\" --default-artifact-root 'gs://${module.storage.mlflow_artifacts_bucket}/' --serve-artifacts"
+    "pip install --no-cache-dir --only-binary=:all: psycopg2-binary==2.9.10 && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri \"$${DEEPCAB_NEON_DSN}\" --default-artifact-root 'gs://${module.storage.mlflow_artifacts_bucket}/' --serve-artifacts"
   ]
 
   env_vars = {

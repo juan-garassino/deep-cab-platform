@@ -45,9 +45,11 @@ class SyncGhService:
             self.gh.run(["variable", "set", "--repo", repo, "-f", str(shared_vars)])
             shared_names = self._parse_names(shared_vars)
             # Per-repo vars (if file exists)
-            per_repo = self.scripts_dir / self.REPO_VARS_FILE[repo]
+            # Unknown repos (not in REPO_VARS_FILE) only get the shared files.
+            per_repo_file = self.REPO_VARS_FILE.get(repo)
+            per_repo = self.scripts_dir / per_repo_file if per_repo_file else None
             per_repo_names: list[str] = []
-            if per_repo.exists():
+            if per_repo is not None and per_repo.exists():
                 self.gh.run(["variable", "set", "--repo", repo, "-f", str(per_repo)])
                 per_repo_names = self._parse_names(per_repo)
             result.vars_set[repo] = shared_names + per_repo_names

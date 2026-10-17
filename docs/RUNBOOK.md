@@ -394,7 +394,8 @@ What happens:
    `gs://deepcab-models-<env>/runs/<run_id>/`.
 5. Logs the run to MLflow at the URL you set in `MLFLOW_URL`.
 6. Sends Telegram start/success/failure pings (no-op when
-   `TELEGRAM_BOT_TOKEN` is empty).
+   `TELEGRAM_BOT_TOKEN_SECRET` is empty; the VM reads the token from that
+   Secret Manager secret at boot, so it never lands in instance metadata).
 7. Self-destructs when training is done (unless `--keep-alive`).
 
 ### 7.2 Watch progress

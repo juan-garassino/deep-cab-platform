@@ -45,12 +45,9 @@ locals {
         deletion_protection = false
         use_private_ip      = false
         backup_enabled      = true
-        authorized_networks = [
-          {
-            name  = "world-readonly-temp"
-            value = "0.0.0.0/0"
-          },
-        ]
+        # No public 0.0.0.0/0 (G-013): add your own /32 here, or use the
+        # Cloud SQL Auth Proxy (works with an empty list).
+        authorized_networks = []
       }
 
       cloud_run_api = {

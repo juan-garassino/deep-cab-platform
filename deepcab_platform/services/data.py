@@ -68,7 +68,7 @@ class DataCloneBqService:
             )
 
         # Step 3: load EU bucket → EU table (idempotent via --replace).
-        rows = self._row_count(qualified, inputs.target_location)
+        rows = self._row_count(qualified, inputs.target_location, inputs.target_project)
         skipped_load = rows is not None and rows > 0
         if not skipped_load:
             self.gcloud.run(
@@ -84,7 +84,7 @@ class DataCloneBqService:
                     f"{eu_prefix}*.parquet",
                 ],
             )
-            rows = self._row_count(qualified, inputs.target_location)
+            rows = self._row_count(qualified, inputs.target_location, inputs.target_project)
 
         # Step 4: optional cleanup of staging buckets.
         staging_deleted = False
@@ -112,6 +112,7 @@ class DataCloneBqService:
     def _render_export_sql(self, inputs: DataCloneBqInputs) -> str:
         template = string.Template(self.sql_template_path.read_text())
         return template.safe_substitute(
+            SOURCE_TABLE=inputs.source_table_sql,
             STAGING_BUCKET_US=inputs.staging_bucket_us,
             YEAR=str(inputs.year),
         )
@@ -130,15 +131,16 @@ class DataCloneBqService:
         )
         return bool(out.strip())
 
-    def _row_count(self, qualified: str, location: str) -> int | None:
+    def _row_count(self, qualified: str, location: str, project: str) -> int | None:
         out = self.gcloud.run(
             [
                 "alpha", "bq", "query",
+                f"--project_id={project}",
                 f"--location={location}",
                 "--use_legacy_sql=false",
                 "--format=value",
                 "--quiet",
-                f"SELECT COUNT(*) FROM `{qualified}`",
+                f"SELECT COUNT(*) FROM `{qualified}`",  # nosec B608 - parts pattern-validated in DataCloneBqInputs
             ],
             check=False,
         )

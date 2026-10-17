@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Protocol, runtime_checkable

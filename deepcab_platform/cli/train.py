@@ -59,7 +59,14 @@ def train_on_vm_cmd(
     # Pull MLflow URL + models bucket from settings/env (or fall back to standard naming).
     mlflow_url = os.environ.get("MLFLOW_URL", "")
     models_bucket = os.environ.get("GCP_MODELS_BUCKET", f"deepcab-models-{env.value}")
-    telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    # Name of the Secret Manager secret holding the bot token (the token itself
+    # is never put in VM metadata).
+    telegram_bot_token_secret = os.environ.get("TELEGRAM_BOT_TOKEN_SECRET", "")
+    if os.environ.get("TELEGRAM_BOT_TOKEN") and not telegram_bot_token_secret:
+        rprint(
+            "[yellow]TELEGRAM_BOT_TOKEN is no longer sent to the VM. Store it in Secret "
+            "Manager and set TELEGRAM_BOT_TOKEN_SECRET to the secret name.[/yellow]"
+        )
     telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
 
     if not mlflow_url:
@@ -72,7 +79,7 @@ def train_on_vm_cmd(
         project_id=pid,
         models_bucket=models_bucket,
         mlflow_url=mlflow_url,
-        telegram_bot_token=telegram_bot_token,
+        telegram_bot_token_secret=telegram_bot_token_secret,
         telegram_chat_id=telegram_chat_id,
     )
 
