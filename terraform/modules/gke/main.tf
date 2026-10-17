@@ -42,10 +42,15 @@ resource "google_container_cluster" "this" {
     master_ipv4_cidr_block  = "172.16.0.0/28"
   }
 
+  # Closed by default (G-012): the control plane is reachable only from the
+  # CIDRs passed in var.master_authorized_cidrs (e.g. your office / VPN).
   master_authorized_networks_config {
-    cidr_blocks {
-      display_name = "world"
-      cidr_block   = "0.0.0.0/0"
+    dynamic "cidr_blocks" {
+      for_each = var.master_authorized_cidrs
+      content {
+        display_name = cidr_blocks.value.name
+        cidr_block   = cidr_blocks.value.cidr
+      }
     }
   }
 

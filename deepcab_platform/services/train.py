@@ -13,6 +13,7 @@ execute deepcab-retrain` is strictly the better path.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import string
 import tempfile
@@ -22,6 +23,15 @@ from pathlib import Path
 from deepcab_platform.providers.gcloud import GcloudProvider
 from deepcab_platform.schemas.enums import GpuType
 from deepcab_platform.schemas.train import TrainOnVmInputs, TrainOnVmResult
+
+
+class _StartupTemplate(string.Template):
+    """`@@{NAME}` placeholders, so bash's own `$VAR` refs are never rendered."""
+
+    delimiter = "@@"
+
+
+_SECRET_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,255}")
 
 # Static cost table (USD/hour). Rough — uses Iowa spot pricing as of 2026-Q1.
 # Used only for the CLI to print a "this will cost about X" hint.
@@ -49,9 +59,16 @@ class TrainOnVmService:
         project_id: str,
         models_bucket: str,
         mlflow_url: str,
-        telegram_bot_token: str = "",
+        telegram_bot_token_secret: str = "",
         telegram_chat_id: str = "",
     ) -> TrainOnVmResult:
+        # The startup script is stored as plaintext instance metadata, so the
+        # bot token itself never goes in it: the VM reads it from Secret
+        # Manager at boot with its own service account (G-011).
+        if telegram_bot_token_secret and not _SECRET_NAME_RE.fullmatch(telegram_bot_token_secret):
+            raise ValueError(
+                f"invalid Secret Manager secret name: {telegram_bot_token_secret!r}"
+            )
         instance_name = self._instance_name(inputs)
         image_uri = (
             f"europe-west1-docker.pkg.dev/{project_id}/deepcab/api:{inputs.image_tag}"
@@ -62,7 +79,7 @@ class TrainOnVmService:
             image_uri=image_uri,
             models_bucket=models_bucket,
             mlflow_url=mlflow_url,
-            telegram_bot_token=telegram_bot_token,
+            telegram_bot_token_secret=telegram_bot_token_secret,
             telegram_chat_id=telegram_chat_id,
         )
 
@@ -121,21 +138,26 @@ class TrainOnVmService:
         image_uri: str,
         models_bucket: str,
         mlflow_url: str,
-        telegram_bot_token: str,
+        telegram_bot_token_secret: str,
         telegram_chat_id: str,
     ) -> str:
-        template = string.Template(self.template_path.read_text())
+        template = _StartupTemplate(self.template_path.read_text())
+        # Every scalar is shlex.quote()'d: the template assigns them unquoted
+        # (`VAR=${VAR}`), so each value reaches root bash as one literal word.
+        scalars = {
+            "PROJECT_ID": project_id,
+            "BACKEND": inputs.backend.value,
+            "DATA": inputs.data.value,
+            "IMAGE": image_uri,
+            "MODELS_BUCKET": models_bucket,
+            "MLFLOW_URL": mlflow_url,
+            "TG_BOT_SECRET": telegram_bot_token_secret,
+            "TG_CHAT": telegram_chat_id,
+            "AUTO_DELETE": "true" if inputs.auto_delete else "false",
+            "GPU": inputs.gpu.value,
+        }
         return template.safe_substitute(
-            PROJECT_ID=project_id,
-            BACKEND=inputs.backend.value,
-            DATA=inputs.data.value,
-            IMAGE=image_uri,
-            MODELS_BUCKET=models_bucket,
-            MLFLOW_URL=mlflow_url,
-            TG_BOT=telegram_bot_token,
-            TG_CHAT=telegram_chat_id,
-            AUTO_DELETE="true" if inputs.auto_delete else "false",
-            GPU=inputs.gpu.value,
+            {k: shlex.quote(v) for k, v in scalars.items()},
             EXTRA_DOCKER_ENV=self._render_extra_docker_env(inputs.extra_env),
         )
 

@@ -78,3 +78,17 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "master_authorized_cidrs" {
+  description = "CIDRs allowed to reach the GKE control plane. Empty = no external access. Never use 0.0.0.0/0."
+  type = list(object({
+    name = string
+    cidr = string
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for c in var.master_authorized_cidrs : c.cidr != "0.0.0.0/0"])
+    error_message = "0.0.0.0/0 is not allowed for the GKE control plane."
+  }
+}

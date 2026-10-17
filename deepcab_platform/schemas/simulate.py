@@ -8,7 +8,7 @@ window + execution target before we shell out.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -47,6 +47,13 @@ class SimulateRunInputs(BaseModel):
         if v not in {"local", "vm"}:
             raise ValueError("executor must be 'local' or 'vm'")
         return v
+
+    @field_validator("time_window_start", "time_window_end")
+    @classmethod
+    def _assume_utc(cls, v: datetime) -> datetime:
+        # Documented as UTC; a naive value is UTC. Without this, mixing a naive
+        # and an aware bound crashed the comparison below with a TypeError.
+        return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v
 
     @field_validator("time_window_end")
     @classmethod

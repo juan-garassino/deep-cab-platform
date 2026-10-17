@@ -1,13 +1,14 @@
 #!/bin/bash
 # VM startup script for deepCab training. Rendered by TrainOnVmService.launch()
-# at CLI-invocation time — ${PLACEHOLDERS} get replaced with real values.
+# at CLI-invocation time — the double-at placeholders get replaced with shell-quoted values
+# (plain bash $VARS below are left alone).
 #
 # Flow:
 #   1. Pull our deepcab/api image from GAR (CUDA wheels if GPU=1)
 #   2. Run `python -m deepCab.training.train backend=X data=Y`
 #   3. The api image's `registry.dispatcher` uploads the model to GCS and
 #      logs the run to MLflow (REGISTRY_TARGET=gcs + MLFLOW_TRACKING_URI).
-#   4. Send Telegram start/success/failure pings (no-op if TG_BOT empty).
+#   4. Send Telegram start/success/failure pings (no-op if TG_BOT_SECRET empty or unreadable).
 #   5. Self-destruct (auto_delete=true → gcloud compute instances delete).
 #
 # The `--max-run-duration` flag on `gcloud compute instances create` is the
@@ -17,17 +18,26 @@
 set -euo pipefail
 
 # ---------------- rendered placeholders ----------------
-PROJECT_ID="${PROJECT_ID}"
-BACKEND="${BACKEND}"
-DATA="${DATA}"
-IMAGE="${IMAGE}"
-MODELS_BUCKET="${MODELS_BUCKET}"
-MLFLOW_URL="${MLFLOW_URL}"
-TG_BOT="${TG_BOT}"
-TG_CHAT="${TG_CHAT}"
-AUTO_DELETE="${AUTO_DELETE}"
-GPU="${GPU}"
+PROJECT_ID=@@{PROJECT_ID}
+BACKEND=@@{BACKEND}
+DATA=@@{DATA}
+IMAGE=@@{IMAGE}
+MODELS_BUCKET=@@{MODELS_BUCKET}
+MLFLOW_URL=@@{MLFLOW_URL}
+TG_BOT_SECRET=@@{TG_BOT_SECRET}
+TG_CHAT=@@{TG_CHAT}
+AUTO_DELETE=@@{AUTO_DELETE}
+GPU=@@{GPU}
 # -------------------------------------------------------
+
+# The bot token is read from Secret Manager at boot (never stored in instance
+# metadata). Needs roles/secretmanager.secretAccessor for the VM's SA on that
+# secret; any failure just disables the Telegram pings.
+TG_BOT=""
+if [ -n "$TG_BOT_SECRET" ]; then
+  TG_BOT=$(gcloud secrets versions access latest --secret="$TG_BOT_SECRET" \
+    --project="$PROJECT_ID" 2>/dev/null || true)
+fi
 
 INSTANCE_NAME=$(curl -sH 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/name)
 ZONE=$(curl -sH 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print $NF}')
@@ -74,7 +84,7 @@ docker_args=(
 # Caller-supplied env overrides land last so they win on conflict (e.g.
 # the simulate flow sets MLFLOW_RUN_NAME + MLFLOW_EXPERIMENT to its
 # deterministic per-chunk names). Empty when no --extra-env was passed.
-extra_env_flags=(${EXTRA_DOCKER_ENV})
+extra_env_flags=(@@{EXTRA_DOCKER_ENV})
 if [ ${#extra_env_flags[@]} -gt 0 ]; then
   docker_args+=("${extra_env_flags[@]}")
 fi

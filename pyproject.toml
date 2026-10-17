@@ -27,6 +27,7 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.5",
     "mypy>=1.10",
+    "types-pyyaml>=6",
 ]
 
 [project.scripts]
@@ -47,3 +48,11 @@ ignore = ["E501"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--color=yes -W ignore::DeprecationWarning"
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# uptime-kuma-api ships no type hints / py.typed marker.
+module = ["uptime_kuma_api", "uptime_kuma_api.*"]
+ignore_missing_imports = true
