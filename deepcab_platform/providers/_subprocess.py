@@ -12,7 +12,7 @@ and raise on failure (with the messages already streamed to the user).
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 - argv lists only, never shell=True
 import sys
 
 
@@ -25,7 +25,7 @@ def run_capture(
     input_text: str | None = None,
 ) -> str:
     """Run a subprocess; on failure write stdout+stderr through and raise."""
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603 - callers pass fixed binaries + validated args
         args,
         check=False,
         cwd=cwd,

@@ -9,9 +9,12 @@ table name fails before any cloud call.
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field, field_validator
 
 _BUCKET = r"^[a-z0-9][a-z0-9_.-]{1,61}[a-z0-9]$"
+_SOURCE_TABLE = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9][.:][A-Za-z0-9_]{1,1024}\.[A-Za-z0-9_-]{1,1024}")
 
 
 class DataCloneBqInputs(BaseModel):
@@ -39,10 +42,15 @@ class DataCloneBqInputs(BaseModel):
     @classmethod
     def _valid_source(cls, v: str) -> str:
         # Allow both `project:dataset.table` and `project.dataset.table` forms.
-        normalised = v.replace(":", ".", 1)
-        if normalised.count(".") != 2:
+        # The value is spliced into backtick-quoted SQL, so the charset is strict.
+        if not _SOURCE_TABLE.fullmatch(v):
             raise ValueError("source_table must be project[:|.]dataset.table")
         return v
+
+    @property
+    def source_table_sql(self) -> str:
+        """`project.dataset.table` form, as used inside a backtick-quoted SQL identifier."""
+        return self.source_table.replace(":", ".", 1)
 
 
 class DataCloneBqResult(BaseModel):

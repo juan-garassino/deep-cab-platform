@@ -35,7 +35,7 @@ SELECT
   CAST(trip_distance     AS FLOAT64) AS trip_distance,
   CAST(fare_amount       AS FLOAT64) AS fare_amount,
   CAST(total_amount      AS FLOAT64) AS total_amount
-FROM `nyc-tlc.yellow.trips`
+FROM `${SOURCE_TABLE}`
 WHERE pickup_datetime BETWEEN
         TIMESTAMP('${YEAR}-01-01 00:00:00')
     AND TIMESTAMP('${YEAR}-12-31 23:59:59')

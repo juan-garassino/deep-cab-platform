@@ -42,6 +42,9 @@ Every 4th run is a meta-review run (count the entries under **Log**). The next o
 | G-019 | med | injection: `MLFLOW_URL`, `GCP_MODELS_BUCKET`, `TELEGRAM_CHAT_ID` (env) were spliced raw into double-quoted assignments in the root startup script; `string.Template` also rendered the script's own bash `$VAR`s | deepcab_platform/services/train.py, startup.sh.tmpl | fixed (`@@{}` delimiter + `shlex.quote`) | 2026-10-17 |
 | G-020 | high | vuln-dep: the deployed MLflow server image `v2.16.2` has 62 known advisories (pip-audit) and the dev Cloud Run service is public (`allow_unauthenticated` defaults to true) | cloud-manifests/mlflow/mirror.yaml, terraform/envs/dev/main.tf | open (owner: needs mirror rebuild + `mlflow db upgrade`) | 2026-10-17 |
 | G-021 | low | bug: `simulate run` crashed with a raw `TypeError` when one bound was naive and the other tz-aware | deepcab_platform/schemas/simulate.py | fixed | 2026-10-17 |
+| G-022 | low | bug: `data clone-bq --source-table` was validated then ignored (SQL hardcoded the source); its validator also let backticks / `;` through into SQL. Row-count query ran in the default gcloud project. | deepcab_platform/schemas/data.py, services/data.py, export.sql | fixed | 2026-10-17 |
+| G-023 | med | injection: `gh_owner` / `gh_platform_repo` unvalidated but spliced into the WIF provider CEL `attribute-condition` and principalSet (e.g. `x' \|\| true \|\| '` would trust any GitHub owner) | deepcab_platform/schemas/bootstrap.py | fixed | 2026-10-17 |
+| G-024 | low | bandit B404/B603/B608 on vetted sites | providers/_subprocess.py, services/data.py | annotated `# nosec` with reason | 2026-10-17 |
 | G-018 | low | bandit B110 try/except/pass (5 sites; best-effort probes on purpose) | services/bootstrap.py, providers/kuma.py | wontfix | 2026-10-15 |
 
 URGENT: possible credential exposure, see the owner's private run summary.
@@ -57,8 +60,8 @@ Triaged as false positives: the gitleaks `hashicorp-tf-password` hits and the de
 | Known-vulnerable deployed images | not checked | 62 (mlflow 2.16.2) | 62 (owner action, G-020) |
 | Bugs open | 3 | 2 (G-008, G-015) | 2 (both workflow-only) |
 | Failing tests | 0 | 0 | 0 |
-| Test count | 7 | 21 | 27 |
-| Coverage (line) | 18% | 26% | 29% |
+| Test count | 7 | 21 | 27 (pass 2: 44) |
+| Coverage (line) | 18% | 26% | 29% (pass 2: 44%) |
 | ruff errors | 1 | 0 | 0 |
 | mypy errors | 3 | 3 | 0 |
 
@@ -75,7 +78,7 @@ The open counts above: high = G-020; med = G-006; low = G-007, G-014 (G-008/G-01
 2. G-011 follow-up (owner): create the `telegram-bot-token` secret, grant `roles/secretmanager.secretAccessor` on it to `deepcab-runtime@`, and export `TELEGRAM_BOT_TOKEN_SECRET=telegram-bot-token`. Ideally manage that secret and binding in Terraform `secret_manager`.
 3. G-012 follow-up: if GKE is ever enabled, pass `master_authorized_cidrs` from the env compositions.
 4. G-014: owner action. See the private summary.
-5. Tests for `services/bootstrap.py` and `services/showcase.py` (largest untested modules).
+5. Tests for `services/showcase.py`, `services/kuma.py`, `providers/kuma.py`, `deps.py` (still 0%). bootstrap/data/secrets were covered in run 2 pass 2.
 6. Get `terraform validate` working: cache providers, or run it in CI.
 
 ## Learnings
@@ -86,6 +89,7 @@ The open counts above: high = G-020; med = G-006; low = G-007, G-014 (G-008/G-01
 
 - `string.Template` substitutes bare `$NAME`, not just `${NAME}`. A bash template rendered with it has *every* bash variable reference rewritten at render time. Use a subclass with its own delimiter (`@@`) for shell templates.
 - Lockfile audits miss what is actually deployed. Container images pinned in Terraform/Cloud Build carry their own (here: much worse) vulnerability surface.
+- pydantic-core regexes are Rust `regex`: no look-around. Use a `field_validator` for exclusions.
 - A pydantic `field_validator` that raises `TypeError` surfaces as a raw exception, not a `ValidationError`. Normalize inputs (e.g. tz) in an earlier validator.
 
 Ideas for future checks:
@@ -100,3 +104,4 @@ Ideas for future checks:
 
 - Run 1 (2026-10-15): First sweep. Fixed 2 vulnerable deps, 2 input-validation injection vectors, 1 bug (sync-gh KeyError), `.gitignore` for env files, and 1 lint error. Added 14 tests. The workflow fixes (G-006/7/8) were written but could not be pushed (token lacks `workflow` scope), so they are listed in the Backlog for the owner. 10 items remain open. osv-scanner was unavailable (403).
 - Run 2 (2026-10-17): Fixed G-011: the Telegram token now comes from Secret Manager on the VM and is no longer in metadata. Fixed G-019: startup-script injection through env-sourced values, plus the template rendering bash's own `$VAR`s. Also fixed G-012 and G-013 (closed the `0.0.0.0/0` networks), G-016 (pinned psycopg2), G-017 (mypy 3 to 0) and G-021 (simulate tz crash). Added 6 tests (21 to 27). New HIGH G-020: the public dev MLflow runs image v2.16.2, which has 62 advisories. That needs an owner-driven migration, so it was not auto-changed. Terraform was only checked with `fmt` (the registry is blocked). Not a meta-review run.
+- Run 2, pass 2 (2026-10-17): Added tests for the riskiest 0%-coverage modules: bootstrap, data clone, secrets rotate (27 to 44 tests, coverage 29% to 44%). They found and fixed G-023 (med, CEL injection into the WIF provider condition via `gh_owner`) and G-022 (`--source-table` ignored + unsafe charset; row-count project scope). Bandit is down to the 5 wontfix B110 sites: vetted sites were annotated with `# nosec` + reason (G-024). MLflow (G-020) was left for the owner, as instructed.
